@@ -25,9 +25,9 @@ class FlutterHttpd {
 
   /// Return a list of of storage infos
   static Future<List<StorageDetails>> getStorageDetails() async {
-    List reply =
+    List details =
         await _channel.invokeMethod(Statics.ACTION_GET_STORAGE_DETAILS, {});
-    List<StorageDetails> storageInfos = reply
+    List<StorageDetails> storageInfos = details
         .map((storageInfoMap) => StorageDetails.fromJson(storageInfoMap))
         .toList();
     return storageInfos;
@@ -39,7 +39,7 @@ class FlutterHttpd {
 
   /// returns current directory that is served by the app server
   static Future<String> getLocalPath() async =>
-      await _channel.invokeMethod(Statics.ACTION_GET_URL, {});
+      await _channel.invokeMethod(Statics.ACTION_GET_LOCAL_PATH, {});
 
   static Future<String> getPlatformVersion() async =>
       await _channel.invokeMethod(Statics.ACTION_GET_PLATFORM_VERSION, {});

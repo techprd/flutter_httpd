@@ -6,11 +6,21 @@ Running a Web Server on Android for flutter
 
 Make sure you have handled READ & WRITE permissions on your app before using this plugin
 
-This project is a starting point for a Flutter
-[plug-in package](https://flutter.dev/developing-packages/),
-a specialized package that includes platform-specific implementation code for
-Android and/or iOS.
+### How to use:
 
-For help getting started with Flutter, view our 
-[online documentation](https://flutter.dev/docs), which offers tutorials, 
-samples, guidance on mobile development, and a full API reference.
+```
+
+    var details = await FlutterHttpd.getStorageDetails();
+    var storage = details[0];
+
+    String serverAddress;
+    try {
+      serverAddress = await FlutterHttpd.startServer(storage.rootDir, 1234);
+    } on PlatformException {
+      serverAddress =
+          'Failed to start server. Make sure you have read / write access';
+    }
+
+```
+
+##### Please refer to example app  for a complete example
