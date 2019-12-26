@@ -1,8 +1,10 @@
 # flutter_httpd
 
-Running a webserver on Android for flutter
+Running a Web Server on Android for flutter
 
 ## Getting Started
+
+Make sure you have handled READ & WRITE permissions on your app before using this plugin
 
 This project is a starting point for a Flutter
 [plug-in package](https://flutter.dev/developing-packages/),

@@ -7,7 +7,6 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.Registrar
-import org.json.JSONArray
 import java.io.IOException
 import java.net.*
 import java.util.*
@@ -29,6 +28,9 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
     private var url = ""
 
     companion object {
+
+        val storageUtils = StorageUtils()
+
         @JvmStatic
         fun registerWith(registrar: Registrar) {
             val channel = MethodChannel(registrar.messenger(), "flutter_httpd")
@@ -38,25 +40,28 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
-        val inputs = call.arguments as HashMap<String, Any>
-        when {
-            call.method == "getPlatformVersion" -> {
+        val inputs = call.arguments<HashMap<String, Any>>()
+
+        when (call.method) {
+            Statics.ACTION_GET_PLATFORM_VERSION -> {
                 result.success("Android ${android.os.Build.VERSION.RELEASE}")
-                Log.d(logTag, "$inputs")
             }
-            Statics.ACTION_START_SERVER == call.method -> {
+            Statics.ACTION_GET_STORAGE_DETAILS -> {
+                val storage = storageUtils.getExternalStorageAvailableData(context)
+                result.success(storage)
+            }
+            Statics.ACTION_START_SERVER -> {
                 Log.d(logTag, "$inputs")
                 startServer(inputs, result)
-
             }
-            Statics.ACTION_STOP_SERVER == call.method -> {
-                stopServer(inputs, result)
+            Statics.ACTION_STOP_SERVER -> {
+                stopServer(result)
             }
-            Statics.ACTION_GET_URL == call.method -> {
+            Statics.ACTION_GET_URL -> {
                 Log.d(logTag, "getURL")
                 result.success(this.url)
             }
-            Statics.ACTION_GET_LOCAL_PATH == call.method -> {
+            Statics.ACTION_GET_LOCAL_PATH -> {
                 Log.d(logTag, "getLocalPath")
                 result.success(this.localPath)
             }
@@ -68,7 +73,7 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
     }
 
     private fun startServer(options: HashMap<String, Any>, result: Result) {
-        Log.d(logTag, "startServer")
+        Log.d(logTag, "starting server...")
 
         val wwwRoot = options[Statics.OPT_WWW_ROOT] as String
         port = options[Statics.OPT_PORT] as Int
@@ -91,10 +96,13 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         if (errMsg.isNotEmpty()) {
             result.error("1", errMsg, errMsg)
         } else {
-            url = if (localhostOnly) {
-                "http://127.0.0.1:$port"
-            } else {
-                "http://" + getLocalIpAddress() + ":" + port
+            url = when {
+                localhostOnly -> {
+                    "http://127.0.0.1:$port"
+                }
+                else -> {
+                    "http://" + getLocalIpAddress() + ":" + port
+                }
             }
             result.success(url)
         }
@@ -146,49 +154,17 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         return "127.0.0.1"
     }
 
-    private fun stopServer(inputs: HashMap<String, Any>, result: Result) {
+    private fun stopServer(result: Result) {
         Log.d(logTag, "stopServer")
-
-//        cordova.getActivity().runOnUiThread(Runnable {
-//            __stopServer()
-//            url = ""
-//            localPath = ""
-//            callbackContext.success()
-//        })
-
-    }
-
-    private fun __stopServer() {
         if (webServers.size > 0) {
             for (webServer in webServers) {
                 webServer.stop()
             }
             webServers.clear()
         }
+        url = ""
+        localPath = ""
+        result.success("File Server has stopped")
     }
 
-    /**
-     * Called when the system is about to start resuming a previous activity.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app
-     */
-    fun onPause(multitasking: Boolean) {
-        //if(! multitasking) __stopServer();
-    }
-
-    /**
-     * Called when the activity will start interacting with the user.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app
-     */
-    fun onResume(multitasking: Boolean) {
-        //if(! multitasking) __startServer();
-    }
-
-    /**
-     * The final call you receive before your activity is destroyed.
-     */
-    fun onDestroy() {
-        __stopServer()
-    }
 }

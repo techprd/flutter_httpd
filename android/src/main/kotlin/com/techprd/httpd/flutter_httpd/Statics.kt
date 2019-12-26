@@ -21,6 +21,8 @@ object Statics {
     const val ACTION_STOP_SERVER = "stopServer"
     const val ACTION_GET_URL = "getURL"
     const val ACTION_GET_LOCAL_PATH = "getLocalPath"
+    const val ACTION_GET_PLATFORM_VERSION = "getPlatformVersion"
+    const val ACTION_GET_STORAGE_DETAILS = "getStorageDetails"
 
     const val OPT_WWW_ROOT = "www_root"
     const val OPT_PORT = "port"

@@ -1,6 +1,7 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.util.Log
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_BAD_REQUEST
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_NOT_FOUND
@@ -137,9 +138,6 @@ open class NanoHTTPD {
 
     /**
      * Override this to customize the server.
-     *
-     *
-     *
      *
      * (By default, this delegates to serveFile() and allows directory listing.)
      *
@@ -421,14 +419,20 @@ open class NanoHTTPD {
                 var startFrom: Long = 0
                 var endAt: Long = -1
                 var range = header.getProperty("range")
-                if (range != null) {
+                if (!range.isNullOrEmpty()) {
                     if (range.startsWith("bytes=")) {
                         range = range.substring("bytes=".length)
                         val minus = range.indexOf('-')
                         try {
                             if (minus > 0) {
-                                startFrom = java.lang.Long.parseLong(range.substring(0, minus))
-                                endAt = java.lang.Long.parseLong(range.substring(minus + 1))
+                                val stRange = range.substring(0, minus)
+                                if (stRange.isNotEmpty()) {
+                                    startFrom = java.lang.Long.parseLong(stRange)
+                                }
+                                val endRange = range.substring(minus + 1)
+                                if (endRange.isNotEmpty()) {
+                                    endAt = java.lang.Long.parseLong(endRange)
+                                }
                             }
                         } catch (nfe: NumberFormatException) {
                             nfe.printStackTrace()

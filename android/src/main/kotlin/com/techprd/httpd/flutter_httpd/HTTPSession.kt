@@ -134,8 +134,14 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
             //   files.put("filePath", saveTmpFile(fbuf, 0, f.size()));
 
             // Ok, now do the serve()
-            val r = nanoHTTPD.serve(uri, header, params)
-            sendResponse(r.status, r.mimeType, r.header, r.data)
+            if (method !== null) {
+                val r = nanoHTTPD.serve(uri, header, params)
+                if (r == null) {
+                    sendError(Statics.HTTP_INTERNAL_ERROR, "SERVER INTERNAL ERROR: Serve() returned a null response.")
+                } else {
+                    sendResponse(r.status, r.mimeType, r.header, r.data)
+                }
+            }
             bufferedReader.close()
             inputStream.close()
         } catch (ioe: IOException) {
@@ -155,7 +161,7 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
         var size1 = 0x7FFFFFFFFFFFFFFFL
         val contentLength = header.getProperty("content-length")
 
-        if (contentLength != null) {
+        if (!contentLength.isNullOrEmpty()) {
             try {
                 size1 = Integer.parseInt(contentLength).toLong()
             } catch (ex: NumberFormatException) {

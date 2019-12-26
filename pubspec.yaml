@@ -1,14 +1,13 @@
 name: flutter_httpd
 description: Running a webserver on Android for flutter
 version: 0.0.1
-author:
-homepage:
+author: 'TECHPRD.com'
+homepage: 'https://techprd.com'
 
 environment:
   sdk: ">=2.1.0 <3.0.0"
 
 dependencies:
-  path_provider: ^1.4.0
   flutter:
     sdk: flutter
 
