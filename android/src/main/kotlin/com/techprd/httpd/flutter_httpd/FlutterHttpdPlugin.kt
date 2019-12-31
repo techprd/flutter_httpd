@@ -13,7 +13,7 @@ import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 
-class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
+class FlutterHttpdPlugin(private val context: Context, private val registrar: Registrar) : MethodCallHandler {
 
     /**
      * Common tag used for logging statements.
@@ -35,7 +35,7 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         fun registerWith(registrar: Registrar) {
             val channel = MethodChannel(registrar.messenger(), "flutter_httpd")
             val context = registrar.context()
-            channel.setMethodCallHandler(FlutterHttpdPlugin(context))
+            channel.setMethodCallHandler(FlutterHttpdPlugin(context, registrar))
         }
     }
 
@@ -83,12 +83,8 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
             //localPath = Environment.getExternalStorageDirectory().getAbsolutePath();
             localPath = wwwRoot
         } else {
-            //localPath = "file:///android_asset/www";
-            localPath = "www"
-            if (wwwRoot.isNotEmpty()) {
-                localPath += "/"
-                localPath += wwwRoot
-            }
+            //localPath = "file:///android_asset/flutter_asset";
+            localPath = registrar.lookupKeyForAsset(wwwRoot)
         }
 
         val errMsg = runServer()
@@ -112,8 +108,7 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         var errMsg = ""
         try {
             val f = AndroidFile(localPath)
-
-            f.assetManager = context.resources.assets
+            f.assetManager = context.assets
 
             val server: WebServer
             if (localhostOnly) {

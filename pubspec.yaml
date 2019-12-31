@@ -1,7 +1,8 @@
 name: flutter_httpd
-description: Running a webserver on Android for flutter
-version: 0.0.1
+description: Running a Web Server on Android for flutter
+version: 1.0.0
 author: 'TECHPRD.com'
+repository: 'https://github.com/techprd/flutter_httpd'
 homepage: 'https://techprd.com'
 
 environment:
