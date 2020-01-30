@@ -1,21 +1,19 @@
 import 'dart:math';
 
-class StorageDetails {
+class StorageDetail {
+  final String name;
   final String appFilesDir;
   final String rootDir;
+  final int size;
   final int availableBytes;
   final int totalBytes;
 
-  int get usedBytes => totalBytes - availableBytes;
+  StorageDetail(this.name, this.appFilesDir, this.rootDir, this.size,
+      this.availableBytes, this.totalBytes);
 
-  double get usedPercent => (usedBytes) / totalBytes;
-
-  StorageDetails(
-      this.appFilesDir, this.rootDir, this.availableBytes, this.totalBytes);
-
-  factory StorageDetails.fromJson(Map json) {
-    return StorageDetails(json["path"], json["rootPath"],
-        json["availableBytes"], json["totalBytes"]);
+  factory StorageDetail.fromJson(Map json) {
+    return StorageDetail(json["name"], json["path"], json["rootPath"],
+        json["size"], json["availableBytes"], json["totalBytes"]);
   }
 
   static String getSize(int size) {
@@ -39,11 +37,12 @@ class StorageDetails {
   String toString() {
     return [
       '{',
+      "name: " + name,
       "appFileDir: " + appFilesDir,
       "rootDir: " + rootDir,
+      "size: " + getSize(size),
       "available: " + getSize(availableBytes),
       "total: " + getSize(totalBytes),
-      "used: " + getSize(usedBytes),
       '}'
     ].join('\n');
   }

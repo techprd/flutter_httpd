@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.Registrar
+import java.io.FileFilter
 import java.io.IOException
 import java.net.*
 import java.util.*
@@ -26,10 +27,9 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
     private var localPath = ""
     private val webServers = ArrayList<WebServer>()
     private var url = ""
+    val storageUtils = StorageUtils(context)
 
     companion object {
-
-        val storageUtils = StorageUtils()
 
         @JvmStatic
         fun registerWith(registrar: Registrar) {
@@ -47,7 +47,11 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
                 result.success("Android ${android.os.Build.VERSION.RELEASE}")
             }
             Statics.ACTION_GET_STORAGE_DETAILS -> {
-                val storage = storageUtils.getExternalStorageAvailableData(context)
+                val storage = storageUtils.getExternalStorageDetails()
+                result.success(storage)
+            }
+            Statics.ACTION_GET_MEDIA_STORAGE_DETAILS -> {
+                val storage = storageUtils.getMediaStorageDetails()
                 result.success(storage)
             }
             Statics.ACTION_START_SERVER -> {
@@ -159,7 +163,20 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
         }
         url = ""
         localPath = ""
+        cleanCacheDir()
         result.success("File Server has stopped")
+    }
+
+    private fun cleanCacheDir() {
+        context.externalCacheDir?.listFiles(FileFilter {
+            it.extension == "tmp"
+        })?.map {
+            try {
+                it.delete()
+            } catch (ex: IOException) {
+                Log.e(logTag, "Failed to delete the cache file: ${it.name}")
+            }
+        }
     }
 
 }

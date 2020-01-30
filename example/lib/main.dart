@@ -22,7 +22,7 @@ class _MyAppState extends State<MyApp> {
 
   // Platform messages are asynchronous, so we initialize in an async method.
   Future<void> initPlatformState() async {
-    var details = await FlutterHttpd.getStorageDetails();
+    var details = await FlutterHttpd.getStorageDetail();
     var storage = details[0];
 
     String serverAddress;
