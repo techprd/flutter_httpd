@@ -18,7 +18,7 @@ import java.io.IOException
 import java.util.*
 
 
-class StorageUtils(val context: Context) {
+class StorageUtils(private val context: Context) {
 
     private var rootDirectory: String? = null
     private val cachedStorage: CacheStorage
@@ -95,32 +95,31 @@ class StorageUtils(val context: Context) {
         val filePath = inputs["path"] as String
         val file = File(filePath)
         var thumbnailPath = cachedStorage.getThumbnailPath(filePath).orEmpty()
+        if (thumbnailPath.isNotEmpty()) {
+            return thumbnailPath
+        }
         when (inputs["type"] as String) {
             "FILE_TYPE.VIDEO" -> {
-                if (thumbnailPath.isEmpty()) {
-                    val videoId = getVideoId(filePath)
-                    thumbnailPath = if (videoId != null) {
-                        getVideoThumbnailByVideoId(videoId.toString()).run {
-                            if (this.isNullOrEmpty()) {
-                                generateVideoThumbnail(file.nameWithoutExtension, filePath).orEmpty()
-                            } else {
-                                this
-                            }
+                val videoId = getVideoId(filePath)
+                thumbnailPath = if (videoId != null) {
+                    getVideoThumbnailByVideoId(videoId.toString()).run {
+                        if (this.isNullOrEmpty()) {
+                            generateVideoThumbnail(file.nameWithoutExtension, filePath).orEmpty()
+                        } else {
+                            this
                         }
-                    } else {
-                        generateVideoThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                     }
-                    cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                } else {
+                    generateVideoThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                 }
+                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
             }
             "FILE_TYPE.AUDIO" -> {
-                if (thumbnailPath.isEmpty()) {
-                    val audioId = getAudioAlbumId(filePath)
-                    if (audioId != null) {
-                        thumbnailPath = generateAlbumArtPath(audioId).orEmpty()
-                    }
-                    cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                val audioId = getAudioAlbumId(filePath)
+                if (audioId != null) {
+                    thumbnailPath = generateAlbumArtPath(audioId).orEmpty()
                 }
+                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
             }
             "FILE_TYPE.IMAGE" -> {
                 if (filePath.contains("/files/thumbnails/")) {
@@ -128,21 +127,19 @@ class StorageUtils(val context: Context) {
                 } else if (filePath.contains(".thumbnails")) {
                     return filePath
                 }
-                if (thumbnailPath.isEmpty()) {
-                    val imageId = getImageId(filePath)
-                    thumbnailPath = if (imageId != null) {
-                        getImageThumbnailByImageId(imageId.toString()).run {
-                            if (this.isNullOrEmpty()) {
-                                generateImageThumbnail(file.nameWithoutExtension, filePath).orEmpty()
-                            } else {
-                                this
-                            }
+                val imageId = getImageId(filePath)
+                thumbnailPath = if (imageId != null) {
+                    getImageThumbnailByImageId(imageId.toString()).run {
+                        if (this.isNullOrEmpty()) {
+                            generateImageThumbnail(file.nameWithoutExtension, filePath).orEmpty()
+                        } else {
+                            this
                         }
-                    } else {
-                        generateImageThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                     }
-                    cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                } else {
+                    generateImageThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                 }
+                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
             }
         }
         return thumbnailPath
