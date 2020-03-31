@@ -27,7 +27,7 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
     private var localPath = ""
     private val webServers = ArrayList<WebServer>()
     private var url = ""
-    val storageUtils = StorageUtils(context)
+    private val storageUtils = StorageUtils(context)
 
     companion object {
 
@@ -62,12 +62,14 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
                 stopServer(result)
             }
             Statics.ACTION_GET_URL -> {
-                Log.d(logTag, "getURL")
                 result.success(this.url)
             }
             Statics.ACTION_GET_LOCAL_PATH -> {
-                Log.d(logTag, "getLocalPath")
                 result.success(this.localPath)
+            }
+            Statics.ACTION_GET_THUMBNAIL_PATH -> {
+                val thumbnailPath = storageUtils.getThumbnailPath(inputs)
+                result.success(thumbnailPath)
             }
             else -> {
                 Log.d(logTag, String.format("Invalid action passed: %s", call.method))

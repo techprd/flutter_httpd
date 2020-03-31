@@ -43,6 +43,11 @@ class FlutterHttpd {
     return storageInfos;
   }
 
+  static Future<String> getThumbnail(Map fileOptions) async {
+    return await _channel.invokeMethod(
+        Statics.ACTION_GET_THUMBNAIL_PATH, fileOptions);
+  }
+
   /// returns the url for the running server
   static Future<String> getUrl() async =>
       await _channel.invokeMethod(Statics.ACTION_GET_URL, {});
