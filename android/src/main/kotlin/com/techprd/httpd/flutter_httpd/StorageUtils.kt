@@ -15,7 +15,6 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
-import java.util.*
 
 
 class StorageUtils(private val context: Context) {
@@ -55,40 +54,55 @@ class StorageUtils(private val context: Context) {
     }
 
     fun getMediaStorageDetails(): List<HashMap<String, Any?>> {
-        return when {
+        when {
             !rootDirectory.isNullOrEmpty() -> {
-                arrayListOf(
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM).absolutePath,
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).absolutePath,
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).absolutePath,
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath,
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath,
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).absolutePath
-                ).filter {
-                    val file = File(it)
-                    file.exists()
-                }.map {
-                    buildStorageDetail(File(it)).toHashMap()
+                try {
+                    return arrayListOf(
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM).absolutePath,
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).absolutePath,
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).absolutePath,
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).absolutePath,
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath,
+                            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS).absolutePath
+                    ).filter {
+                        val file = File(it)
+                        file.exists()
+                    }.map {
+                        buildStorageDetail(File(it)).toHashMap()
+                    }
+                } catch (ex: Exception) {
+                    Log.e("FileTransfer", "Failed to get a list of common android dirs")
+                    return arrayListOf()
                 }
             }
             else -> {
-                arrayListOf()
+                return arrayListOf()
             }
         }
     }
 
     private fun buildStorageDetail(file: File): StorageDetail {
-
         val statFs = StatFs(file.path)
-        val size: Long = FileUtils.sizeOfDirectory(file)
-        return StorageDetail(
-                file.name,
-                file.absolutePath,
-                file.parent,
-                size,
-                statFs.totalBytes,
-                statFs.freeBytes
-        )
+        try {
+            val size: Long = FileUtils.sizeOfDirectory(file)
+            return StorageDetail(
+                    file.name,
+                    file.absolutePath,
+                    file.parent,
+                    size,
+                    statFs.totalBytes,
+                    statFs.freeBytes
+            )
+        } catch (ex: NoSuchMethodError) {
+            return StorageDetail(
+                    file.name,
+                    file.absolutePath,
+                    file.parent,
+                    0,
+                    statFs.totalBytes,
+                    statFs.freeBytes
+            )
+        }
     }
 
     fun getThumbnailPath(inputs: HashMap<String, Any>): String {
