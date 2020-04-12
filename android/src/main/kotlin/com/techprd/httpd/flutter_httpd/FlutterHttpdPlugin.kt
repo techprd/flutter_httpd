@@ -7,14 +7,14 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import io.flutter.plugin.common.PluginRegistry.Registrar
-import org.json.JSONArray
+import java.io.FileFilter
 import java.io.IOException
 import java.net.*
 import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 
-class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
+class FlutterHttpdPlugin(private val context: Context, private val registrar: Registrar) : MethodCallHandler {
 
     /**
      * Common tag used for logging statements.
@@ -27,38 +27,49 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
     private var localPath = ""
     private val webServers = ArrayList<WebServer>()
     private var url = ""
+    private val storageUtils = StorageUtils(context)
 
     companion object {
+
         @JvmStatic
         fun registerWith(registrar: Registrar) {
             val channel = MethodChannel(registrar.messenger(), "flutter_httpd")
             val context = registrar.context()
-            channel.setMethodCallHandler(FlutterHttpdPlugin(context))
+            channel.setMethodCallHandler(FlutterHttpdPlugin(context, registrar))
         }
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
-        val inputs = call.arguments as HashMap<String, Any>
-        when {
-            call.method == "getPlatformVersion" -> {
+        val inputs = call.arguments<HashMap<String, Any>>()
+
+        when (call.method) {
+            Statics.ACTION_GET_PLATFORM_VERSION -> {
                 result.success("Android ${android.os.Build.VERSION.RELEASE}")
-                Log.d(logTag, "$inputs")
             }
-            Statics.ACTION_START_SERVER == call.method -> {
+            Statics.ACTION_GET_STORAGE_DETAILS -> {
+                val storage = storageUtils.getExternalStorageDetails()
+                result.success(storage)
+            }
+            Statics.ACTION_GET_MEDIA_STORAGE_DETAILS -> {
+                val storage = storageUtils.getMediaStorageDetails()
+                result.success(storage)
+            }
+            Statics.ACTION_START_SERVER -> {
                 Log.d(logTag, "$inputs")
                 startServer(inputs, result)
-
             }
-            Statics.ACTION_STOP_SERVER == call.method -> {
-                stopServer(inputs, result)
+            Statics.ACTION_STOP_SERVER -> {
+                stopServer(result)
             }
-            Statics.ACTION_GET_URL == call.method -> {
-                Log.d(logTag, "getURL")
+            Statics.ACTION_GET_URL -> {
                 result.success(this.url)
             }
-            Statics.ACTION_GET_LOCAL_PATH == call.method -> {
-                Log.d(logTag, "getLocalPath")
+            Statics.ACTION_GET_LOCAL_PATH -> {
                 result.success(this.localPath)
+            }
+            Statics.ACTION_GET_THUMBNAIL_PATH -> {
+                val thumbnailPath = storageUtils.getThumbnailPath(inputs)
+                result.success(thumbnailPath)
             }
             else -> {
                 Log.d(logTag, String.format("Invalid action passed: %s", call.method))
@@ -68,7 +79,7 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
     }
 
     private fun startServer(options: HashMap<String, Any>, result: Result) {
-        Log.d(logTag, "startServer")
+        Log.d(logTag, "starting server...")
 
         val wwwRoot = options[Statics.OPT_WWW_ROOT] as String
         port = options[Statics.OPT_PORT] as Int
@@ -78,12 +89,8 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
             //localPath = Environment.getExternalStorageDirectory().getAbsolutePath();
             localPath = wwwRoot
         } else {
-            //localPath = "file:///android_asset/www";
-            localPath = "www"
-            if (wwwRoot.isNotEmpty()) {
-                localPath += "/"
-                localPath += wwwRoot
-            }
+            //localPath = "file:///android_asset/flutter_asset";
+            localPath = registrar.lookupKeyForAsset(wwwRoot)
         }
 
         val errMsg = runServer()
@@ -91,10 +98,13 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         if (errMsg.isNotEmpty()) {
             result.error("1", errMsg, errMsg)
         } else {
-            url = if (localhostOnly) {
-                "http://127.0.0.1:$port"
-            } else {
-                "http://" + getLocalIpAddress() + ":" + port
+            url = when {
+                localhostOnly -> {
+                    "http://127.0.0.1:$port"
+                }
+                else -> {
+                    "http://" + getLocalIpAddress() + ":" + port
+                }
             }
             result.success(url)
         }
@@ -104,8 +114,7 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         var errMsg = ""
         try {
             val f = AndroidFile(localPath)
-
-            f.assetManager = context.resources.assets
+            f.assetManager = context.assets
 
             val server: WebServer
             if (localhostOnly) {
@@ -146,49 +155,30 @@ class FlutterHttpdPlugin(private val context: Context) : MethodCallHandler {
         return "127.0.0.1"
     }
 
-    private fun stopServer(inputs: HashMap<String, Any>, result: Result) {
+    private fun stopServer(result: Result) {
         Log.d(logTag, "stopServer")
-
-//        cordova.getActivity().runOnUiThread(Runnable {
-//            __stopServer()
-//            url = ""
-//            localPath = ""
-//            callbackContext.success()
-//        })
-
-    }
-
-    private fun __stopServer() {
         if (webServers.size > 0) {
             for (webServer in webServers) {
                 webServer.stop()
             }
             webServers.clear()
         }
+        url = ""
+        localPath = ""
+        cleanCacheDir()
+        result.success("File Server has stopped")
     }
 
-    /**
-     * Called when the system is about to start resuming a previous activity.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app
-     */
-    fun onPause(multitasking: Boolean) {
-        //if(! multitasking) __stopServer();
+    private fun cleanCacheDir() {
+        context.externalCacheDir?.listFiles(FileFilter {
+            it.extension == "tmp"
+        })?.map {
+            try {
+                it.delete()
+            } catch (ex: IOException) {
+                Log.e(logTag, "Failed to delete the cache file: ${it.name}")
+            }
+        }
     }
 
-    /**
-     * Called when the activity will start interacting with the user.
-     *
-     * @param multitasking Flag indicating if multitasking is turned on for app
-     */
-    fun onResume(multitasking: Boolean) {
-        //if(! multitasking) __startServer();
-    }
-
-    /**
-     * The final call you receive before your activity is destroyed.
-     */
-    fun onDestroy() {
-        __stopServer()
-    }
 }

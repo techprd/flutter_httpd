@@ -6,8 +6,16 @@ import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.MIME_PLAINTEXT
 import java.io.*
 import java.net.Socket
+import java.net.SocketException
 import java.net.URLDecoder
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.charset.Charset
 import java.util.*
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+import kotlin.math.min
+
 
 /**
  * Handles one session, i.e. parses the HTTP request
@@ -16,6 +24,20 @@ import java.util.*
 class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket) : Runnable {
 
     private val logTag = "HTTPSession: "
+    private lateinit var inputStream: BufferedInputStream
+
+    companion object {
+        const val BUFFER_SIZE = 8192
+        const val MEMORY_STORE_LIMIT = 20000000
+        const val MAX_HEADER_SIZE = 1024
+        const val REQUEST_BUFFER_LEN = 1024 * 16
+        private const val CONTENT_DISPOSITION_REGEX = "([ |\t]*Content-Disposition[ |\t]*:)(.*)"
+        val CONTENT_DISPOSITION_PATTERN: Pattern = Pattern.compile(CONTENT_DISPOSITION_REGEX, Pattern.CASE_INSENSITIVE)
+        private const val CONTENT_DISPOSITION_ATTRIBUTE_REGEX = "[ |\t]*([a-zA-Z]*)[ |\t]*=[ |\t]*['|\"]([^\"^']*)['|\"]"
+        val CONTENT_DISPOSITION_ATTRIBUTE_PATTERN: Pattern = Pattern.compile(CONTENT_DISPOSITION_ATTRIBUTE_REGEX)
+        private const val CONTENT_TYPE_REGEX = "([ |\t]*content-type[ |\t]*:)(.*)"
+        val CONTENT_TYPE_PATTERN: Pattern = Pattern.compile(CONTENT_TYPE_REGEX, Pattern.CASE_INSENSITIVE)
+    }
 
     init {
         val t = Thread(this)
@@ -25,34 +47,53 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
 
     override fun run() {
         try {
-            val inputStream = mySocket.getInputStream() ?: return
+            val inStream = mySocket.getInputStream() ?: return
+            inputStream = BufferedInputStream(inStream, BUFFER_SIZE)
 
             // Read the first 8192 bytes.
             // The full header should fit in here.
             // Apache's default header limit is 8KB.
             // Do NOT assume that a single read will get the entire header at once!
-            val bufSize = 8192
-            var buf = ByteArray(bufSize)
+            val buf = ByteArray(BUFFER_SIZE)
             var splitByte = 0
             var rLen = 0
-            run {
-                var read = inputStream.read(buf, 0, bufSize)
-                while (read > 0) {
-                    rLen += read
-                    splitByte = findHeaderEnd(buf, rLen)
-                    if (splitByte > 0)
-                        break
-                    read = inputStream.read(buf, rLen, bufSize - rLen)
+
+            var read: Int
+            inputStream.mark(BUFFER_SIZE)
+
+            read = try {
+                inputStream.read(buf, 0, BUFFER_SIZE)
+            } catch (e: IOException) {
+                inputStream.close()
+                inStream.close()
+                throw SocketException("NanoHttpd Shutdown")
+            }
+            if (read == -1) {
+                // socket was been closed
+                inputStream.close()
+                inStream.close()
+                throw SocketException("NanoHttpd Shutdown")
+            }
+
+            while (read > 0) {
+                rLen += read
+                splitByte = findHeaderEnd(buf, rLen)
+                if (splitByte > 0) {
+                    break
                 }
+                read = this.inputStream.read(buf, rLen, BUFFER_SIZE - rLen)
+            }
+
+            if (splitByte < rLen) {
+                this.inputStream.reset()
+                this.inputStream.skip(splitByte.toLong())
             }
 
             // Create a BufferedReader for parsing the header.
-            val hBis = ByteArrayInputStream(buf, 0, rLen)
-            val hin = BufferedReader(InputStreamReader(hBis))
+            val hin = BufferedReader(InputStreamReader(ByteArrayInputStream(buf, 0, rLen)))
             val pre = Properties()
             val params = Properties()
             val header = Properties()
-            val files = Properties()
 
             // Decode the header into params and header java properties
             decodeHeader(hin, pre, params, header)
@@ -60,84 +101,16 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
             val method = pre.getProperty("method")
             val uri = pre.getProperty("uri")
 
-            var size = calculateSize(header)
-
-            // Write the part of body already read to ByteArrayOutputStream f
-            val f = ByteArrayOutputStream()
-            if (splitByte < rLen)
-                f.write(buf, splitByte, rLen - splitByte)
-
-            // While Firefox sends on the first read all the data fitting
-            // our buffer, Chrome and Opera send only the headers even if
-            // there is data for the body. We do some magic here to find
-            // out whether we have already consumed part of body, if we
-            // have reached the end of the data to be sent or we should
-            // expect the first byte of the body at the next read.
-            if (splitByte < rLen)
-                size -= (rLen - splitByte + 1).toLong()
-            else if (splitByte == 0 || size == 0x7FFFFFFFFFFFFFFFL)
-                size = 0
-
-            // Now read all the body and write it to f
-            buf = ByteArray(512)
-            while (rLen >= 0 && size > 0) {
-                rLen = inputStream.read(buf, 0, 512)
-                size -= rLen.toLong()
-                if (rLen > 0)
-                    f.write(buf, 0, rLen)
-            }
-
-            // Get the raw body as a byte []
-            val fBuf = f.toByteArray()
-
-            // Create a BufferedReader for easily reading it as string.
-            val bin = ByteArrayInputStream(fBuf)
-            val bufferedReader = BufferedReader(InputStreamReader(bin))
-
-            // If the method is POST, there may be parameters
-            // in data section, too, read it:
-            if (method != null && method.equals("POST", ignoreCase = true)) {
-                var contentType = ""
-                val contentTypeHeader = header.getProperty("content-type")
-                var st = StringTokenizer(contentTypeHeader, "; ")
-                if (st.hasMoreTokens()) {
-                    contentType = st.nextToken()
-                }
-
-                if (contentType.equals("multipart/form-data", ignoreCase = true)) {
-                    // Handle multipart/form-data
-                    if (!st.hasMoreTokens())
-                        sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but boundary missing. Usage: GET /example/file.html")
-                    val boundaryExp = st.nextToken()
-                    st = StringTokenizer(boundaryExp, "=")
-                    if (st.countTokens() != 2)
-                        sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but boundary syntax error. Usage: GET /example/file.html")
-                    st.nextToken()
-                    val boundary = st.nextToken()
-
-                    decodeMultipartData(uri, boundary, fBuf, bufferedReader, params, files)
-                } else {
-                    // Handle application/x-www-form-urlencoded
-                    var postLine = StringBuilder()
-                    val pBuf = CharArray(512)
-                    var read = bufferedReader.read(pBuf)
-                    while (read >= 0 && !postLine.toString().endsWith("\r\n")) {
-                        postLine.append(String(pBuf, 0, read))
-                        read = bufferedReader.read(pBuf)
-                    }
-                    postLine = StringBuilder(postLine.toString().trim { it <= ' ' })
-                    decodeParams(postLine.toString(), params)
-                }
-            }
+            parseBody(header, splitByte, rLen, method, uri, params)
 
             // if (method != null && method.equalsIgnoreCase("PUT"))
             //   files.put("filePath", saveTmpFile(fbuf, 0, f.size()));
 
             // Ok, now do the serve()
-            val r = nanoHTTPD.serve(uri, header, params)
-            sendResponse(r.status, r.mimeType, r.header, r.data)
-            bufferedReader.close()
-            inputStream.close()
+            if (method !== null) {
+                val r = nanoHTTPD.serve(uri, header, params)
+                sendResponse(r.status, r.mimeType, r.header, r.data)
+            }
         } catch (ioe: IOException) {
             try {
                 sendError(HTTP_INTERNAL_ERROR, "SERVER INTERNAL ERROR: IOException: " + ioe.message)
@@ -148,20 +121,99 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
         } catch (ie: InterruptedException) {
             // Thrown by sendError, ignore and exit the thread.
         }
-
     }
 
-    private fun calculateSize(header: Properties): Long {
-        var size1 = 0x7FFFFFFFFFFFFFFFL
+    private fun parseBody(header: Properties, splitByte: Int, rLen: Int,
+                          method: String?, uri: String, params: Properties) {
+
+        var randomAccessFile: RandomAccessFile? = null
+
+        try {
+            var rLen1 = rLen
+            var size = calculateSize(header, splitByte, rLen)
+
+            var byteArrayOut: ByteArrayOutputStream? = null
+            val requestDataOutput: DataOutput?
+
+            // Store the request in memory or a file, depending on size
+            if (size < MEMORY_STORE_LIMIT) {
+                byteArrayOut = ByteArrayOutputStream()
+                requestDataOutput = DataOutputStream(byteArrayOut)
+            } else {
+                randomAccessFile = getTmpBucket()
+                requestDataOutput = randomAccessFile
+            }
+
+            val buf = ByteArray(REQUEST_BUFFER_LEN)
+
+            while (rLen1 >= 0 && size > 0) {
+                rLen1 = inputStream.read(buf, 0, min(size, REQUEST_BUFFER_LEN))
+                size -= rLen1
+                if (rLen1 > 0) {
+                    requestDataOutput!!.write(buf, 0, rLen1)
+                }
+            }
+
+            val fBuf: ByteBuffer?
+            if (byteArrayOut != null) {
+                fBuf = ByteBuffer.wrap(byteArrayOut.toByteArray(), 0, byteArrayOut.size())
+            } else {
+                fBuf = randomAccessFile!!.channel.map(FileChannel.MapMode.READ_ONLY, 0, randomAccessFile.length())
+                randomAccessFile.seek(0)
+            }
+
+            // If the method is POST, there may be parameters
+            // in data section, too, read it:
+            if (method != null && method.equals("POST", ignoreCase = true)) {
+                val contentType = ContentType(header.getProperty("content-type"))
+
+                if (contentType.isMultipart) {
+                    // Handle multipart/form-data
+                    val boundary = contentType.boundary
+                    if (boundary == null)
+                        sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but boundary missing. Usage: GET /example/file.html")
+
+                    decodeMultipartData(uri, contentType, fBuf!!, params)
+                } else {
+                    // Handle application/x-www-form-urlencoded
+                    val postBytes = ByteArray(fBuf!!.remaining())
+                    fBuf.get(postBytes)
+                    val postLine = String(postBytes, Charset.forName(contentType.getEncoding())).trim()
+                    // Handle application/x-www-form-urlencoded
+                    if ("application/x-www-form-urlencoded".equals(contentType.contentType, ignoreCase = true)) {
+                        decodeParams(postLine, params)
+                    }
+                }
+            }
+        } finally {
+            randomAccessFile?.close()
+        }
+    }
+
+    private fun getTmpBucket(): RandomAccessFile? {
+        try {
+            val fileName = File.createTempFile("HTTPSession", null)
+            val file = File(nanoHTTPD.context?.externalCacheDir, fileName.name)
+            file.createNewFile()
+            return RandomAccessFile(file, "rw")
+        } catch (ex: Exception) {
+            throw Error(ex)
+        }
+    }
+
+    private fun calculateSize(header: Properties, splitByte: Int, rLen: Int): Int {
+        var size1 = 0
         val contentLength = header.getProperty("content-length")
 
-        if (contentLength != null) {
+        if (!contentLength.isNullOrEmpty()) {
             try {
-                size1 = Integer.parseInt(contentLength).toLong()
+                size1 = Integer.parseInt(contentLength)
             } catch (ex: NumberFormatException) {
                 ex.printStackTrace()
             }
 
+        } else if (splitByte < rLen) {
+            return rLen - splitByte
         }
         return size1
     }
@@ -193,9 +245,9 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
                 nanoHTTPD.forceDownload = uri.endsWith("forcedownload")
                 nanoHTTPD.zipDownload = uri.endsWith("zipdownload")
                 decodeParams(uri.substring(qmi + 1), params)
-                uri = decodeUri(uri.substring(0, qmi))
+                uri = decodePercent(uri.substring(0, qmi))
             } else
-                uri = decodeUri(uri)
+                uri = decodePercent(uri)
 
             // If there's another token, it's protocol version,
             // followed by HTTP headers. Ignore version but parse headers.
@@ -224,73 +276,98 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
      * into java Properties' key - value pairs.
      */
     @Throws(InterruptedException::class)
-    private fun decodeMultipartData(uri: String, boundary: String, fbuf: ByteArray, reader: BufferedReader, parms: Properties, files: Properties) {
+    private fun decodeMultipartData(uri: String, contentType: ContentType, fBuf: ByteBuffer, params: Properties) {
+        var pCount = 0
         try {
-            val bPositions = getBoundaryPositions(fbuf, boundary.toByteArray())
-            var boundaryCount = 1
-            var mpLine = reader.readLine()
-            while (mpLine != null) {
-                if (!mpLine.contains(boundary))
-                    sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but next chunk does not start with boundary. Usage: GET /example/file.html")
-                boundaryCount++
-                val item = Properties()
-                mpLine = reader.readLine()
-                while (mpLine != null && mpLine.trim { it <= ' ' }.isNotEmpty()) {
-                    val p = mpLine.indexOf(':')
-                    if (p != -1)
-                        item[mpLine.substring(0, p).trim { it <= ' ' }.toLowerCase(Locale.US)] =
-                                mpLine.substring(p + 1).trim { it <= ' ' }
-                    mpLine = reader.readLine()
+            val boundaryIndexes = getBoundaryPositions(fBuf, contentType.boundary!!.toByteArray())
+            if (boundaryIndexes.size < 2) {
+                return sendError(HTTP_BAD_REQUEST,
+                        "BAD REQUEST: Content type is multipart/form-data but contains less than two boundary strings.")
+            }
+            val partHeaderBuff = ByteArray(MAX_HEADER_SIZE)
+            for (boundaryIdx in 0 until boundaryIndexes.size - 1) {
+                fBuf.position(boundaryIndexes[boundaryIdx])
+                val len = if (fBuf.remaining() < MAX_HEADER_SIZE) fBuf.remaining() else MAX_HEADER_SIZE
+                fBuf[partHeaderBuff, 0, len]
+                val bufferedReader = BufferedReader(InputStreamReader(ByteArrayInputStream(partHeaderBuff, 0, len), Charset.forName(contentType.getEncoding())), len)
+                var headerLines = 0
+                // First line is boundary string
+                var mpLine = bufferedReader.readLine()
+                headerLines++
+                if (mpLine == null || !mpLine.contains(contentType.boundary!!)) {
+                    return sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but chunk does not start with boundary.")
                 }
-                if (mpLine != null) {
-                    val contentDisposition = item.getProperty("content-disposition")
-                    if (contentDisposition == null) {
-                        sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Content type is multipart/form-data but no content-disposition info found. Usage: GET /example/file.html")
-                    }
-                    val st = StringTokenizer(contentDisposition, ";")
-                    val disposition = Properties()
-                    while (st.hasMoreTokens()) {
-                        val token = st.nextToken()
-                        Log.e(logTag, "token: $token")
-                        val p = token.indexOf('=')
-                        if (p != -1)
-                            disposition[token.substring(0, p).trim { it <= ' ' }.toLowerCase(Locale.US)] =
-                                    token.substring(p + 1).trim { it <= ' ' }
-                    }
-                    var pname = disposition.getProperty("name")
-                    pname = pname.substring(1, pname.length - 1)
-
-                    var value = StringBuilder()
-                    if (item.getProperty("content-type") == null) {
-                        while (!mpLine!!.contains(boundary)) {
-                            mpLine = reader.readLine()
-                            if (mpLine != null) {
-                                val d = mpLine.indexOf(boundary)
-                                if (d == -1)
-                                    value.append(mpLine)
-                                else
-                                    value.append(mpLine, 0, d - 2)
+                var partName: String? = null
+                var fileName: String? = null
+                var partContentType: String? = null
+                // Parse the reset of the header lines
+                mpLine = bufferedReader.readLine()
+                headerLines++
+                while (mpLine != null && mpLine.trim { it <= ' ' }.isNotEmpty()) {
+                    var matcher: Matcher = CONTENT_DISPOSITION_PATTERN.matcher(mpLine)
+                    if (matcher.matches()) {
+                        val attributeString: String = matcher.group(2)
+                        matcher = CONTENT_DISPOSITION_ATTRIBUTE_PATTERN.matcher(attributeString)
+                        while (matcher.find()) {
+                            val key: String = matcher.group(1)
+                            if ("name".equals(key, ignoreCase = true)) {
+                                partName = matcher.group(2)
+                            } else if ("filename".equals(key, ignoreCase = true)) {
+                                fileName = matcher.group(2)
+                                // add these two line to support multiple
+                                // files uploaded using the same field Id
+                                if (fileName.isNotEmpty()) {
+                                    if (pCount > 0) partName += pCount++.toString() else pCount++
+                                }
                             }
                         }
-                    } else {
-                        if (boundaryCount > bPositions.size)
-                            sendError(HTTP_INTERNAL_ERROR, "Error processing request")
-                        val offset = stripMultipartHeaders(fbuf, bPositions[boundaryCount - 2])
-                        val path = saveTmpFile(uri, pname, fbuf, offset, bPositions[boundaryCount - 1] - offset - 4)
-                        files[pname] = path
-                        value = StringBuilder(disposition.getProperty("filename"))
-                        value = StringBuilder(value.substring(1, value.length - 1))
-                        do {
-                            mpLine = reader.readLine()
-                        } while (mpLine != null && !mpLine.contains(boundary))
                     }
-                    parms[pname] = value.toString()
+                    matcher = CONTENT_TYPE_PATTERN.matcher(mpLine)
+                    if (matcher.matches()) {
+                        partContentType = matcher.group(2).trim()
+                    }
+                    mpLine = bufferedReader.readLine()
+                    headerLines++
+                }
+
+                var partHeaderLength = 0
+                while (headerLines-- > 0) {
+                    partHeaderLength = skipOverNewLine(partHeaderBuff, partHeaderLength)
+                }
+
+                // Read the part data
+                if (partHeaderLength >= len - 4) {
+                    sendError(HTTP_INTERNAL_ERROR, "Multipart header size exceeds MAX_HEADER_SIZE.")
+                }
+                val partDataStart = boundaryIndexes[boundaryIdx] + partHeaderLength
+                val partDataEnd = boundaryIndexes[boundaryIdx + 1] - 4
+                fBuf.position(partDataStart)
+                var values = params[partName] as ArrayList<String>?
+                if (values == null) {
+                    values = arrayListOf("")
+                    params[partName] = values
+                }
+                Log.d(logTag, "contentType: $partContentType")
+                if (partContentType == null) { // Read the part into a string
+                    val dataBytes = ByteArray(partDataEnd - partDataStart)
+                    fBuf.get(dataBytes)
+                    values.add(String(dataBytes, Charset.forName(contentType.getEncoding())))
+                } else { // Read it into a file
+                    saveTmpFile(uri, fBuf, partDataStart, partDataEnd - partDataStart, fileName!!)
+                    values.add(fileName)
                 }
             }
         } catch (ioe: IOException) {
             sendError(HTTP_INTERNAL_ERROR, "SERVER INTERNAL ERROR: IOException: " + ioe.message)
         }
+    }
 
+    private fun skipOverNewLine(partHeaderBuff: ByteArray, index: Int): Int {
+        var index1 = index
+        while (partHeaderBuff[index1] != '\n'.toByte()) {
+            index1++
+        }
+        return ++index1
     }
 
     /**
@@ -310,35 +387,40 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
     /**
      * Find the byte positions where multipart boundaries start.
      */
-    private fun getBoundaryPositions(b: ByteArray, boundary: ByteArray): IntArray {
-        var matchCount = 0
-        var matchByte = -1
-        val matchBytes = Vector<Int>()
-        run {
-            var i = 0
-            while (i < b.size) {
-                if (b[i] == boundary[matchCount]) {
-                    if (matchCount == 0)
-                        matchByte = i
-                    matchCount++
-                    if (matchCount == boundary.size) {
-                        matchBytes.addElement(matchByte)
-                        matchCount = 0
-                        matchByte = -1
+    private fun getBoundaryPositions(b: ByteBuffer, boundary: ByteArray): IntArray {
+        var res = IntArray(0)
+        if (b.remaining() < boundary.size) {
+            return res
+        }
+
+        var searchWindowPos = 0
+        val searchWindow = ByteArray(4 * 1024 + boundary.size)
+
+        val firstFill = if (b.remaining() < searchWindow.size) b.remaining() else searchWindow.size
+        b.get(searchWindow, 0, firstFill)
+        var newBytes: Int = firstFill - boundary.size
+
+        do { // Search the search_window
+            for (j in 0 until newBytes) {
+                for (i in boundary.indices) {
+                    if (searchWindow[j + i] != boundary[i]) break
+                    if (i == boundary.size - 1) { // Match found, add it to results
+                        val newRes = IntArray(res.size + 1)
+                        System.arraycopy(res, 0, newRes, 0, res.size)
+                        newRes[res.size] = searchWindowPos + j
+                        res = newRes
                     }
-                } else {
-                    i -= matchCount
-                    matchCount = 0
-                    matchByte = -1
                 }
-                i++
             }
-        }
-        val ret = IntArray(matchBytes.size)
-        for (i in ret.indices) {
-            ret[i] = matchBytes.elementAt(i) as Int
-        }
-        return ret
+            searchWindowPos += newBytes
+            // Copy the end of the buffer to the start
+            System.arraycopy(searchWindow, searchWindow.size - boundary.size, searchWindow, 0, boundary.size)
+            // Refill search_window
+            newBytes = searchWindow.size - boundary.size
+            newBytes = if (b.remaining() < newBytes) b.remaining() else newBytes
+            b.get(searchWindow, boundary.size, newBytes)
+        } while (newBytes > 0)
+        return res
     }
 
     /**
@@ -346,21 +428,29 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
      * to a temporary file.
      * The full path to the saved file is returned.
      */
-    private fun saveTmpFile(uri: String, filename: String, b: ByteArray, offset: Int, len: Int): String {
+    private fun saveTmpFile(uri: String, b: ByteBuffer, offset: Int, len: Int, filename: String): String {
         var path = ""
         if (len > 0) {
-
             try {
                 val dir = AndroidFile(nanoHTTPD.myRootDir, uri)
                 val temp = File(dir, filename)
 
-                Log.d(logTag, "can dir write: " + dir.absolutePath + " " + dir.canWrite())
-                val created = temp.createNewFile()
-                if (created) {
-                    Log.d(logTag, "  saveTmpFile: writing to file now")
-                    val fStream = FileOutputStream(temp)
-                    fStream.write(b, offset, len)
-                    fStream.close()
+                Log.d(logTag, "can dir write: " + dir.path + " " + dir.canWrite())
+                if (!temp.exists()) {
+                    temp.createNewFile()
+                }
+
+                if (temp.exists()) {
+                    Log.d(logTag, " RandomAccessFile writing with offset: $offset and length: $len")
+                    try {
+                        val src = b.duplicate()
+                        val fileOutputStream = FileOutputStream(temp)
+                        val dest = fileOutputStream.channel
+                        src.position(offset).limit(offset + len)
+                        dest.write(src.slice())
+                    } catch (ex: IOException) {
+                        ex.printStackTrace()
+                    }
                     path = temp.absolutePath
                 } else {
                     Log.e(logTag, " Failed to create file")
@@ -375,63 +465,19 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
     }
 
     /**
-     * It returns the offset separating multipart file headers
-     * from the file's data.
-     */
-    private fun stripMultipartHeaders(b: ByteArray, offset: Int): Int {
-        var i = offset
-        while (i < b.size) {
-            if (b[i] == '\r'.toByte() && b[++i] == '\n'.toByte() && b[++i] == '\r'.toByte() && b[++i] == '\n'.toByte())
-                break
-            i++
-        }
-        return i + 1
-    }
-
-    private fun decodeUri(uri: String): String {
-        val newUri = StringBuilder()
-        val st = StringTokenizer(uri, "/ ", true)
-        while (st.hasMoreTokens()) {
-            when (val tok = st.nextToken()) {
-                "/" -> newUri.append("/")
-                "%20" -> newUri.append(" ")
-                else -> try {
-                    newUri.append(URLDecoder.decode(tok, "UTF-8"))
-                } catch (e: UnsupportedEncodingException) {
-                    e.printStackTrace()
-                }
-            }
-        }
-        return newUri.toString()
-    }
-
-    /**
      * Decodes the percent encoding scheme. <br></br>
      * For example: "an+example%20string" -> "an example string"
      */
     @Throws(InterruptedException::class)
     private fun decodePercent(str: String): String? {
-
+        var decoded: String? = null
         try {
-            val sb = StringBuilder()
-            var i = 0
-            while (i < str.length) {
-                when (val c = str[i]) {
-                    '+' -> sb.append(' ')
-                    '%' -> {
-                        sb.append(Integer.parseInt(str.substring(i + 1, i + 3), 16).toChar())
-                        i += 2
-                    }
-                    else -> sb.append(c)
-                }
-                i++
-            }
-            return sb.toString()
-        } catch (e: Exception) {
+            decoded = URLDecoder.decode(str, "UTF8")
+        } catch (e: UnsupportedEncodingException) {
             sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Bad percent-encoding.")
-            return null
         }
 
+        return decoded;
     }
 
     /**

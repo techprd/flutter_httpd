@@ -20,12 +20,23 @@ import java.io.*
 import java.util.*
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.net.SocketException
 import java.net.URLEncoder
 import java.text.SimpleDateFormat
 
+/**
+ * A simple, tiny, nicely embeddable HTTP 1.0 (partially 1.1) server in Java
+ *
+ * <p> NanoHTTPD version 1.25,
+ * Copyright &copy; 2001,2005-2012 Jarno Elonen (elonen@iki.fi, http://iki.fi/elonen/)
+ * and Copyright &copy; 2010 Konstantinos Togias (info@ktogias.gr, http://ktogias.gr)
+ *
+ * See the end of the source file for distribution license
+ * (Modified BSD licence)
+ */
 open class NanoHTTPD {
-    private var fileLibraryService: FileLibraryService? = null
-    private var context: Context? = null
+    var fileLibraryService: FileLibraryService? = null
+    var context: Context? = null
     private val myTcpPort: Int
     private val myServerSocket: ServerSocket
     private val myThread: Thread
@@ -100,6 +111,8 @@ open class NanoHTTPD {
             try {
                 while (true)
                     HTTPSession(this, myServerSocket.accept())
+            } catch (ex: SocketException) {
+                // socket closed already
             } catch (ioe: IOException) {
                 ioe.printStackTrace()
             }
@@ -123,6 +136,8 @@ open class NanoHTTPD {
             try {
                 while (true)
                     HTTPSession(this, myServerSocket.accept())
+            } catch (ex: SocketException) {
+                // socket closed already
             } catch (ioe: IOException) {
                 ioe.printStackTrace()
             }
@@ -137,9 +152,6 @@ open class NanoHTTPD {
 
     /**
      * Override this to customize the server.
-     *
-     *
-     *
      *
      * (By default, this delegates to serveFile() and allows directory listing.)
      *
@@ -421,14 +433,20 @@ open class NanoHTTPD {
                 var startFrom: Long = 0
                 var endAt: Long = -1
                 var range = header.getProperty("range")
-                if (range != null) {
+                if (!range.isNullOrEmpty()) {
                     if (range.startsWith("bytes=")) {
                         range = range.substring("bytes=".length)
                         val minus = range.indexOf('-')
                         try {
                             if (minus > 0) {
-                                startFrom = java.lang.Long.parseLong(range.substring(0, minus))
-                                endAt = java.lang.Long.parseLong(range.substring(minus + 1))
+                                val stRange = range.substring(0, minus)
+                                if (stRange.isNotEmpty()) {
+                                    startFrom = java.lang.Long.parseLong(stRange)
+                                }
+                                val endRange = range.substring(minus + 1)
+                                if (endRange.isNotEmpty()) {
+                                    endAt = java.lang.Long.parseLong(endRange)
+                                }
                             }
                         } catch (nfe: NumberFormatException) {
                             nfe.printStackTrace()
@@ -491,5 +509,34 @@ open class NanoHTTPD {
         res.addHeader("Access-Control-Allow-Headers", "X-Requested-With,content-type")
         return res
     }
+
+    /**
+     * The distribution licence
+     */
+    private val LICENCE = "Copyright (C) 2001,2005-2011 by Jarno Elonen <elonen@iki.fi>\n" +
+            "and Copyright (C) 2010 by Konstantinos Togias <info@ktogias.gr>\n" +
+            "\n" +
+            "Redistribution and use in source and binary forms, with or without\n" +
+            "modification, are permitted provided that the following conditions\n" +
+            "are met:\n" +
+            "\n" +
+            "Redistributions of source code must retain the above copyright notice,\n" +
+            "this list of conditions and the following disclaimer. Redistributions in\n" +
+            "binary form must reproduce the above copyright notice, this list of\n" +
+            "conditions and the following disclaimer in the documentation and/or other\n" +
+            "materials provided with the distribution. The name of the author may not\n" +
+            "be used to endorse or promote products derived from this software without\n" +
+            "specific prior written permission. \n" +
+            " \n" +
+            "THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR\n" +
+            "IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES\n" +
+            "OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.\n" +
+            "IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,\n" +
+            "INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT\n" +
+            "NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,\n" +
+            "DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY\n" +
+            "THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n" +
+            "(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\n" +
+            "OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
 
 }
