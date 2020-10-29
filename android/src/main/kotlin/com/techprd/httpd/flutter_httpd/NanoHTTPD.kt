@@ -1,6 +1,8 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.util.Log
+import androidx.annotation.IntegerRes
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_BAD_REQUEST
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_NOT_FOUND
@@ -261,6 +263,20 @@ open class NanoHTTPD {
                 try {
                     val albumCover = fileLibraryService!!.getMusicAlbumCover(albumId)
                     data = albumCover.toString()
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+            uri.contains("get-recent-files") -> {
+                val limit = params.getProperty("LIMIT")
+                val offset = params.getProperty("OFFSET")
+                if (limit == null || limit == "" || offset == null || offset == "") {
+                    return Response(HTTP_BAD_REQUEST, MIME_JSON,
+                            "BAD REQUEST: no limit HEADER presented.")
+                }
+                try {
+                    val recentFiles = fileLibraryService!!.getRecentFiles(Integer.parseInt(limit), Integer.parseInt(offset))
+                    data = recentFiles.toString()
                 } catch (e: JSONException) {
                     e.printStackTrace()
                 }

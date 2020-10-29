@@ -20,6 +20,8 @@ class FileLibraryService(private val context: Context) {
             ContentProviderService(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, QueryType.MUSIC)
     private val musicAlbumCoverProvider =
             ContentProviderService(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI, QueryType.MUSIC_ALBUM_COVER)
+    private val recentFilesProvider =
+            ContentProviderService(MediaStore.Files.getContentUri("external"), QueryType.RECENT_FILE)
 
     companion object {
         private var instance: FileLibraryService? = null
@@ -96,6 +98,15 @@ class FileLibraryService(private val context: Context) {
         return musicAlbumCoverProvider.setContext(context)
                 .setWhereClause(MediaStore.Audio.Albums._ID + " = ?")
                 .setSelectionArgs(arrayOf(albumId))
+                .queryContentProvider()
+    }
+
+    @Throws(JSONException::class)
+    fun getRecentFiles(limit: Int, offset: Int): JSONObject {
+        return recentFilesProvider.setContext(context)
+                .setSortOrder(MediaStore.Files.FileColumns.DATE_ADDED + " DESC ")
+                .setOffset(offset)
+                .setLimit(limit)
                 .queryContentProvider()
     }
 }

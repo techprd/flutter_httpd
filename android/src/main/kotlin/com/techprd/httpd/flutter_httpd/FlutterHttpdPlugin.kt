@@ -2,6 +2,7 @@ package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
 import android.util.Log
+import com.google.gson.Gson
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
@@ -70,6 +71,18 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
             Statics.ACTION_GET_THUMBNAIL_PATH -> {
                 val thumbnailPath = storageUtils.getThumbnailPath(inputs)
                 result.success(thumbnailPath)
+            }
+            Statics.ACTION_GET_RECENT_FILES -> {
+                val fileService = FileLibraryService.getInstance(context)
+                if (fileService != null) {
+                    val limit = inputs["limit"] as Int
+                    val offset = inputs["offset"] as Int
+                    val data = fileService.getRecentFiles(limit, offset)
+                    val dataHashmap = Gson().fromJson(data.toString(), HashMap::class.java)
+                    result.success(dataHashmap)
+                } else {
+                    result.error("500", "File Service is not accessible", "")
+                }
             }
             else -> {
                 Log.d(logTag, String.format("Invalid action passed: %s", call.method))
