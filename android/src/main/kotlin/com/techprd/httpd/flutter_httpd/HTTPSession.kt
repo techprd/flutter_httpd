@@ -429,10 +429,14 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
      * The full path to the saved file is returned.
      */
     private fun saveTmpFile(uri: String, b: ByteBuffer, offset: Int, len: Int, filename: String): String {
+        val fileUri = uri
         var path = ""
         if (len > 0) {
             try {
-                val dir = AndroidFile(nanoHTTPD.myRootDir, uri)
+                var dir = AndroidFile(nanoHTTPD.myRootDir, fileUri)
+                if(fileUri.startsWith("/SDCard") && nanoHTTPD.sdCardRootDir != null) {
+                   dir = AndroidFile(nanoHTTPD.sdCardRootDir!!, fileUri.removePrefix("/SDCard"))
+                }
                 val temp = File(dir, filename)
 
                 Log.d(logTag, "can dir write: " + dir.path + " " + dir.canWrite())

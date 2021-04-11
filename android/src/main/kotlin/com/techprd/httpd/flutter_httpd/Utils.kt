@@ -133,6 +133,7 @@ class Utils {
             return object : JSONObject() {
                 init {
                     put("album_art", MediaStore.Audio.Albums.ALBUM_ART)
+                    put("album", MediaStore.Audio.Albums.ALBUM)
                     put("album_id", MediaStore.Audio.Albums._ID)
                 }
             }
@@ -144,6 +145,7 @@ class Utils {
                 init {
                     put("int.id", MediaStore.Files.FileColumns._ID)
                     put("title", MediaStore.Files.FileColumns.TITLE)
+                    put("mime", MediaStore.Files.FileColumns.MIME_TYPE)
                     put("display_name", MediaStore.Files.FileColumns.DISPLAY_NAME)
                     put("nativeURL", MediaStore.Files.FileColumns.DATA)
                     put("int.size", MediaStore.Files.FileColumns.SIZE)

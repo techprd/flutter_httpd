@@ -15,12 +15,14 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
+import java.lang.ref.WeakReference
 
-
-class StorageUtils(private val context: Context) {
+class StorageUtils(context: Context) {
 
     private var rootDirectory: String? = null
     private val cachedStorage: CacheStorage
+    private val contextReference = WeakReference(context)
+    private val contentResolver = context.contentResolver
 
     init {
         context.getExternalFilesDirs(null).forEach { file ->
@@ -29,15 +31,30 @@ class StorageUtils(private val context: Context) {
         cachedStorage = CacheStorage.getInstance(context)!!
     }
 
+    companion object {
+        private var instance: StorageUtils? = null
+        fun getInstance(context: Context): StorageUtils? {
+            if (instance == null) {
+                synchronized(StorageUtils::class.java) {
+                    if (instance == null) {
+                        instance = StorageUtils(context)
+                    }
+                }
+            }
+            return instance
+        }
+    }
+
     fun getExternalStorageDetails(): List<HashMap<String, Any?>> {
+        if (contextReference.get() == null) return emptyList()
         val storageDetails = arrayListOf<StorageDetail>()
-        for ((index, file) in context.getExternalFilesDirs(null).withIndex()) {
+        for ((index, file) in contextReference.get()!!.getExternalFilesDirs(null).withIndex()) {
             val statFs = StatFs(file.path)
             try {
                 val rootPath = file?.parentFile?.parentFile?.parentFile?.parentFile?.absolutePath
                 val dirName = when (index) {
                     0 -> "Root"
-                    1 -> "SD Card"
+                    1 -> "SDCard"
                     else -> file.name
                 }
                 val storageData =
@@ -161,7 +178,7 @@ class StorageUtils(private val context: Context) {
 
     fun getVideoThumbnailByVideoId(videoID: String): String? {
         val projection = arrayOf(MediaStore.Video.Media.DATA)
-        val cursor = context.contentResolver.query(
+        val cursor = contentResolver.query(
                 MediaStore.Video.Thumbnails.EXTERNAL_CONTENT_URI,
                 projection,
                 MediaStore.Video.Thumbnails.VIDEO_ID + "=?",
@@ -176,9 +193,9 @@ class StorageUtils(private val context: Context) {
     }
 
     fun generateVideoThumbnail(name: String, path: String): String? {
-
+        if (contextReference.get() == null) return null
         val thumbnailFile = File(
-                context.getExternalFilesDir("thumbnails"), "$name.jpg")
+                contextReference.get()!!.getExternalFilesDir("thumbnails"), "$name.jpg")
         try {
             if (!thumbnailFile.exists()) {
                 val thumbnail = ThumbnailUtils.createVideoThumbnail(path, MediaStore.Images.Thumbnails.MINI_KIND)
@@ -198,8 +215,9 @@ class StorageUtils(private val context: Context) {
     }
 
     fun getImageThumbnailByImageId(imageId: String): String? {
+        if (contextReference.get() == null) return null
         val projection = arrayOf(MediaStore.Images.Media.DATA)
-        val cursor = context.contentResolver.query(
+        val cursor = contextReference.get()!!.contentResolver.query(
                 MediaStore.Images.Thumbnails.EXTERNAL_CONTENT_URI,
                 projection,
                 MediaStore.Images.Thumbnails.IMAGE_ID + "=?",
@@ -214,8 +232,9 @@ class StorageUtils(private val context: Context) {
     }
 
     fun getVideoId(filePath: String): Long? {
+        if (contextReference.get() == null) return null
         val projection = arrayOf(MediaStore.Video.Media._ID)
-        val cursor = context.contentResolver.query(
+        val cursor = contentResolver.query(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 MediaStore.Video.Media.DATA + "=?",
@@ -231,7 +250,7 @@ class StorageUtils(private val context: Context) {
 
     fun getImageId(filePath: String): Long? {
         val projection = arrayOf(MediaStore.Images.Media._ID)
-        val cursor = context.contentResolver.query(
+        val cursor = contentResolver.query(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 MediaStore.Images.Media.DATA + "=?",
@@ -247,7 +266,7 @@ class StorageUtils(private val context: Context) {
 
     fun getAudioAlbumId(filePath: String): Long? {
         val projection = arrayOf(MediaStore.Audio.Media.ALBUM_ID)
-        val cursor = context.contentResolver.query(
+        val cursor = contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 MediaStore.Audio.Media.DATA + "=?",
@@ -266,8 +285,7 @@ class StorageUtils(private val context: Context) {
                 .parse("content://media/external/audio/albumart")
         val albumArtUri = ContentUris.withAppendedId(sArtworkUri, albumId)
         try {
-            val uri = MediaStore.Images.Media.getBitmap(
-                    context.contentResolver, albumArtUri)
+            val uri = MediaStore.Images.Media.getBitmap(contentResolver, albumArtUri)
             return Bitmap.createScaledBitmap(uri, 200, 200, true)
         } catch (exception: FileNotFoundException) {
         } catch (e: IOException) {
@@ -277,7 +295,8 @@ class StorageUtils(private val context: Context) {
     }
 
     fun generateAlbumArtPath(albumId: Long): String? {
-        val parent = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        if (contextReference.get() == null) return null
+        val parent = contextReference.get()!!.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
         val file = File(parent, "${albumId}.jpg")
         if (!file.exists()) {
             val albumArt = getAlbumArt(albumId) ?: return null
@@ -294,13 +313,14 @@ class StorageUtils(private val context: Context) {
     }
 
     fun generateImageThumbnail(name: String, path: String): String? {
+        if (contextReference.get() == null) return null
         val thumbnailFile = File(
-                context.getExternalFilesDir("thumbnails"), "$name.jpg")
+                contextReference.get()!!.getExternalFilesDir("thumbnails"), "$name.jpg")
         try {
             if (!thumbnailFile.exists()) {
                 val thumbnail = ThumbnailUtils.extractThumbnail(
                         BitmapFactory.decodeFile(path),
-                        200, 200)
+                        500, 500)
                 if (thumbnail != null) {
                     val fos = FileOutputStream(thumbnailFile)
                     thumbnail.compress(Bitmap.CompressFormat.JPEG, 90, fos)

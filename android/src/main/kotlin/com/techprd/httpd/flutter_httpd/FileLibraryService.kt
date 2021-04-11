@@ -1,7 +1,9 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.os.Build
 import android.provider.MediaStore
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -22,6 +24,8 @@ class FileLibraryService(private val context: Context) {
             ContentProviderService(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI, QueryType.MUSIC_ALBUM_COVER)
     private val recentFilesProvider =
             ContentProviderService(MediaStore.Files.getContentUri("external"), QueryType.RECENT_FILE)
+
+    val storageUtils: StorageUtils = StorageUtils.getInstance(context)!!
 
     companion object {
         private var instance: FileLibraryService? = null
@@ -95,6 +99,14 @@ class FileLibraryService(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getMusicAlbumCover(albumId: String): JSONObject {
+        if (Build.VERSION.SDK_INT > 29) {
+            val albumCover = storageUtils.generateAlbumArtPath(albumId.toLong())
+            val obj = JSONObject()
+            val arr = JSONArray()
+            arr.put(JSONObject().put("album_art", albumCover))
+            obj.put("data", arr)
+            return obj
+        }
         return musicAlbumCoverProvider.setContext(context)
                 .setWhereClause(MediaStore.Audio.Albums._ID + " = ?")
                 .setSelectionArgs(arrayOf(albumId))
@@ -104,7 +116,8 @@ class FileLibraryService(private val context: Context) {
     @Throws(JSONException::class)
     fun getRecentFiles(limit: Int, offset: Int): JSONObject {
         return recentFilesProvider.setContext(context)
-                .setSortOrder(MediaStore.Files.FileColumns.DATE_ADDED + " DESC ")
+                .setSortOrder(MediaStore.Files.FileColumns.DATE_MODIFIED + " DESC ")
+                .setWhereClause(MediaStore.Files.FileColumns.MIME_TYPE + "!= 'application/octet-stream'")
                 .setOffset(offset)
                 .setLimit(limit)
                 .queryContentProvider()

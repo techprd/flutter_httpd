@@ -19,8 +19,7 @@ import java.util.*
 import kotlin.collections.ArrayList
 
 
-class ContentProviderService(
-        private val externalContentUri: Uri, private val queryType: QueryType) {
+class ContentProviderService(private val externalContentUri: Uri, private val queryType: QueryType) {
 
     private var dateFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
     private var context: Context? = null

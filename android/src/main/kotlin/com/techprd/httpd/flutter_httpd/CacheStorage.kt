@@ -6,11 +6,7 @@ import android.content.SharedPreferences
 class CacheStorage(context: Context) {
 
     private val storageName = "TechPrdFileTransfer"
-    private var preferences: SharedPreferences
-
-    init {
-        preferences = context.getSharedPreferences(storageName, Context.MODE_PRIVATE)
-    }
+    private var preferences: SharedPreferences = context.getSharedPreferences(storageName, Context.MODE_PRIVATE)
 
     companion object {
         private var instance: CacheStorage? = null

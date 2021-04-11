@@ -1,13 +1,18 @@
 package com.techprd.httpd.flutter_httpd
 
+import android.app.Activity
 import android.content.Context
 import android.util.Log
+import android.view.WindowManager
 import com.google.gson.Gson
+import io.flutter.FlutterInjector
+import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
-import io.flutter.plugin.common.PluginRegistry.Registrar
 import java.io.FileFilter
 import java.io.IOException
 import java.net.*
@@ -15,7 +20,7 @@ import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.collections.HashMap
 
-class FlutterHttpdPlugin(private val context: Context, private val registrar: Registrar) : MethodCallHandler {
+class FlutterHttpdPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     /**
      * Common tag used for logging statements.
@@ -24,20 +29,37 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
 
     private var port = 8888
     private var localhostOnly = false
-
     private var localPath = ""
     private val webServers = ArrayList<WebServer>()
     private var url = ""
-    private val storageUtils = StorageUtils(context)
+    private lateinit var channel : MethodChannel
+    private lateinit var context: Context
+    private lateinit var activity: Activity
+    private lateinit var storageUtils: StorageUtils
 
-    companion object {
+    override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        channel = MethodChannel(binding.binaryMessenger, "flutter_httpd")
+        channel.setMethodCallHandler(this)
+        context = binding.applicationContext
+        storageUtils = StorageUtils(context)
+    }
 
-        @JvmStatic
-        fun registerWith(registrar: Registrar) {
-            val channel = MethodChannel(registrar.messenger(), "flutter_httpd")
-            val context = registrar.context()
-            channel.setMethodCallHandler(FlutterHttpdPlugin(context, registrar))
-        }
+    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+        channel.setMethodCallHandler(null)
+    }
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        activity = binding.activity
+    }
+
+    override fun onDetachedFromActivity() {
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
@@ -58,9 +80,11 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
             Statics.ACTION_START_SERVER -> {
                 Log.d(logTag, "$inputs")
                 startServer(inputs, result)
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
             Statics.ACTION_STOP_SERVER -> {
                 stopServer(result)
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
             Statics.ACTION_GET_URL -> {
                 result.success(this.url)
@@ -103,7 +127,8 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
             localPath = wwwRoot
         } else {
             //localPath = "file:///android_asset/flutter_asset";
-            localPath = registrar.lookupKeyForAsset(wwwRoot)
+            val loader = FlutterInjector.instance().flutterLoader()
+            localPath = loader.getLookupKeyForAsset(wwwRoot)
         }
 
         val errMsg = runServer()
@@ -127,15 +152,22 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
         var errMsg = ""
         try {
             val f = AndroidFile(localPath)
+            var sdCardRootDir: AndroidFile? = null
             f.assetManager = context.assets
+
+            val storage = storageUtils.getExternalStorageDetails()
+            val sdCardDetails = storage.find { it["name"] == "SDCard" }
+            if (sdCardDetails != null) {
+                sdCardRootDir = AndroidFile(sdCardDetails["rootPath"].toString())
+            }
 
             val server: WebServer
             if (localhostOnly) {
                 val localAddress = InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), port)
-                server = WebServer(localAddress, f, context)
+                server = WebServer(localAddress, f, sdCardRootDir, context)
                 webServers.add(server)
             } else {
-                server = WebServer(port, f, context)
+                server = WebServer(port, f, sdCardRootDir, context)
                 webServers.add(server)
             }
         } catch (e: IOException) {
@@ -193,5 +225,4 @@ class FlutterHttpdPlugin(private val context: Context, private val registrar: Re
             }
         }
     }
-
 }
