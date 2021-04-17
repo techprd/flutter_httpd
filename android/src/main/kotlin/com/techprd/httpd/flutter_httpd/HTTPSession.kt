@@ -150,7 +150,7 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
                 rLen1 = inputStream.read(buf, 0, min(size, REQUEST_BUFFER_LEN))
                 size -= rLen1
                 if (rLen1 > 0) {
-                    requestDataOutput!!.write(buf, 0, rLen1)
+                    requestDataOutput.write(buf, 0, rLen1)
                 }
             }
 
@@ -190,7 +190,7 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
         }
     }
 
-    private fun getTmpBucket(): RandomAccessFile? {
+    private fun getTmpBucket(): RandomAccessFile {
         try {
             val fileName = File.createTempFile("HTTPSession", null)
             val file = File(nanoHTTPD.context?.externalCacheDir, fileName.name)
@@ -481,7 +481,7 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
             sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Bad percent-encoding.")
         }
 
-        return decoded;
+        return decoded
     }
 
     /**

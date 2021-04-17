@@ -1,10 +1,6 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
-import android.util.Log
-import com.google.gson.JsonArray
-import com.google.gson.JsonElement
-import com.google.gson.JsonObject
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_BAD_REQUEST
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_NOT_FOUND
@@ -18,7 +14,6 @@ import com.techprd.httpd.flutter_httpd.Statics.HTTP_RANGE_NOT_SATISFIABLE
 import com.techprd.httpd.flutter_httpd.Statics.MIME_HTML
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_REDIRECT
 import com.techprd.httpd.flutter_httpd.Statics.MIME_DEFAULT_BINARY
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.*
@@ -98,7 +93,7 @@ open class NanoHTTPD {
     // ==================================================
     // Socket & server code
     // ==================================================
-
+    // TODO: simplify these constructors
     /**
      * Starts a HTTP server to given port.
      *
@@ -106,8 +101,8 @@ open class NanoHTTPD {
      * Throws an IOException if the socket is already in use
      */
     @Throws(IOException::class)
-    constructor(localAddress: InetSocketAddress, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
-        fileLibraryService = FileLibraryService.getInstance(context)
+    constructor(fileLibraryService: FileLibraryService, localAddress: InetSocketAddress, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
+        this.fileLibraryService = fileLibraryService
         this.context = context
         myTcpPort = localAddress.port
         myRootDir = wwwRoot
@@ -133,8 +128,8 @@ open class NanoHTTPD {
      * Throws an IOException if the socket is already in use
      */
     @Throws(IOException::class)
-    constructor(port: Int, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
-        fileLibraryService = FileLibraryService.getInstance(context)
+    constructor(fileLibraryService: FileLibraryService, port: Int, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
+        this.fileLibraryService = fileLibraryService
         this.context = context
         myTcpPort = port
         myRootDir = wwwRoot
@@ -188,9 +183,10 @@ open class NanoHTTPD {
 
         } else return when {
             uri.startsWith("/api") -> serveJson(uri, params)
-            uri.startsWith("/home") -> serveFile("/", header, myRootDir)
+            uri.startsWith("/app") -> serveFile("/", header, myRootDir)
             uri.startsWith("/SDCard") -> {
-                sdCardRootDir?.let { serveFile(uri, header, it) } ?: serveFile("/", header, myRootDir)
+                sdCardRootDir?.let { serveFile(uri, header, it) }
+                        ?: serveFile("/", header, myRootDir)
             }
             else -> serveFile(uri, header, myRootDir)
         }
@@ -363,7 +359,7 @@ open class NanoHTTPD {
                         "FORBIDDEN: Won't serve ../ for security reasons.")
         }
         var f = AndroidFile(homeDir, uri)
-        if(path.startsWith("/SDCard")) {
+        if (path.startsWith("/SDCard")) {
             f = AndroidFile(homeDir, uri.removePrefix("/SDCard"))
         }
         if (res == null && !f.exists())

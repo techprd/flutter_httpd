@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import android.view.WindowManager
 import com.google.gson.Gson
+import com.techprd.httpd.flutter_httpd.di.DaggerAppComponent
 import io.flutter.FlutterInjector
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -32,16 +33,19 @@ class FlutterHttpdPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     private var localPath = ""
     private val webServers = ArrayList<WebServer>()
     private var url = ""
-    private lateinit var channel : MethodChannel
+    private lateinit var channel: MethodChannel
     private lateinit var context: Context
     private lateinit var activity: Activity
     private lateinit var storageUtils: StorageUtils
+    private lateinit var fileService: FileLibraryService
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(binding.binaryMessenger, "flutter_httpd")
         channel.setMethodCallHandler(this)
         context = binding.applicationContext
-        storageUtils = StorageUtils(context)
+        val appComponent = DaggerAppComponent.factory().create(context)
+        fileService = appComponent.fileService()
+        storageUtils = appComponent.storageUtils()
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -97,16 +101,11 @@ class FlutterHttpdPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                 result.success(thumbnailPath)
             }
             Statics.ACTION_GET_RECENT_FILES -> {
-                val fileService = FileLibraryService.getInstance(context)
-                if (fileService != null) {
-                    val limit = inputs["limit"] as Int
-                    val offset = inputs["offset"] as Int
-                    val data = fileService.getRecentFiles(limit, offset)
-                    val dataHashmap = Gson().fromJson(data.toString(), HashMap::class.java)
-                    result.success(dataHashmap)
-                } else {
-                    result.error("500", "File Service is not accessible", "")
-                }
+                val limit = inputs["limit"] as Int
+                val offset = inputs["offset"] as Int
+                val data = fileService.getRecentFiles(limit, offset)
+                val dataHashmap = Gson().fromJson(data.toString(), HashMap::class.java)
+                result.success(dataHashmap)
             }
             else -> {
                 Log.d(logTag, String.format("Invalid action passed: %s", call.method))
@@ -164,10 +163,10 @@ class FlutterHttpdPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
             val server: WebServer
             if (localhostOnly) {
                 val localAddress = InetSocketAddress(InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)), port)
-                server = WebServer(localAddress, f, sdCardRootDir, context)
+                server = WebServer(fileService, localAddress, f, sdCardRootDir, context)
                 webServers.add(server)
             } else {
-                server = WebServer(port, f, sdCardRootDir, context)
+                server = WebServer(fileService, port, f, sdCardRootDir, context)
                 webServers.add(server)
             }
         } catch (e: IOException) {

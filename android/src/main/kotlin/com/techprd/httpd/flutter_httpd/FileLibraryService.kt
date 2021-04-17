@@ -6,8 +6,11 @@ import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class FileLibraryService(private val context: Context) {
+@Singleton
+class FileLibraryService @Inject constructor(private val storageUtils: StorageUtils, private val context: Context) {
     private val photoAlbumProvider: ContentProviderService =
             ContentProviderService(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, QueryType.PHOTO_ALBUM)
     private val photoProvider =
@@ -24,23 +27,6 @@ class FileLibraryService(private val context: Context) {
             ContentProviderService(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI, QueryType.MUSIC_ALBUM_COVER)
     private val recentFilesProvider =
             ContentProviderService(MediaStore.Files.getContentUri("external"), QueryType.RECENT_FILE)
-
-    val storageUtils: StorageUtils = StorageUtils.getInstance(context)!!
-
-    companion object {
-        private var instance: FileLibraryService? = null
-
-        fun getInstance(context: Context): FileLibraryService? {
-            if (instance == null) {
-                synchronized(FileLibraryService::class.java) {
-                    if (instance == null) {
-                        instance = FileLibraryService(context)
-                    }
-                }
-            }
-            return instance
-        }
-    }
 
 
     @Throws(JSONException::class)

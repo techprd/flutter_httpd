@@ -7,12 +7,12 @@ import java.net.InetSocketAddress
 class WebServer : NanoHTTPD {
 
     @Throws(IOException::class)
-    constructor(localAddress: InetSocketAddress, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) :
-            super(localAddress, wwwRoot, sdCardRootDir, context) {
+    constructor(fileLibraryService: FileLibraryService, localAddress: InetSocketAddress, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) :
+            super(fileLibraryService, localAddress, wwwRoot, sdCardRootDir, context) {
     }
 
     @Throws(IOException::class)
-    constructor(port: Int, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) :
-            super(port, wwwRoot, sdCardRootDir, context) {
+    constructor(fileLibraryService: FileLibraryService, port: Int, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) :
+            super(fileLibraryService, port, wwwRoot, sdCardRootDir, context) {
     }
 }

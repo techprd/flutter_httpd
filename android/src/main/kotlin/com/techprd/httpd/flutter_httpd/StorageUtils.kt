@@ -10,38 +10,27 @@ import android.os.Environment
 import android.os.StatFs
 import android.provider.MediaStore
 import android.util.Log
+import com.techprd.httpd.flutter_httpd.storage.Storage
+import dagger.Component
 import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.lang.ref.WeakReference
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class StorageUtils(context: Context) {
+@Singleton
+class StorageUtils @Inject constructor(private val cachedStorage: Storage, context: Context) {
 
     private var rootDirectory: String? = null
-    private val cachedStorage: CacheStorage
     private val contextReference = WeakReference(context)
     private val contentResolver = context.contentResolver
 
     init {
         context.getExternalFilesDirs(null).forEach { file ->
             rootDirectory = file?.parentFile?.parentFile?.parentFile?.parentFile?.absolutePath
-        }
-        cachedStorage = CacheStorage.getInstance(context)!!
-    }
-
-    companion object {
-        private var instance: StorageUtils? = null
-        fun getInstance(context: Context): StorageUtils? {
-            if (instance == null) {
-                synchronized(StorageUtils::class.java) {
-                    if (instance == null) {
-                        instance = StorageUtils(context)
-                    }
-                }
-            }
-            return instance
         }
     }
 
@@ -125,7 +114,7 @@ class StorageUtils(context: Context) {
     fun getThumbnailPath(inputs: HashMap<String, Any>): String {
         val filePath = inputs["path"] as String
         val file = File(filePath)
-        var thumbnailPath = cachedStorage.getThumbnailPath(filePath).orEmpty()
+        var thumbnailPath = cachedStorage.getString(filePath).orEmpty()
         if (thumbnailPath.isNotEmpty()) {
             return thumbnailPath
         }
@@ -143,14 +132,14 @@ class StorageUtils(context: Context) {
                 } else {
                     generateVideoThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                 }
-                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                cachedStorage.setString(filePath, thumbnailPath)
             }
             "FILE_TYPE.AUDIO" -> {
                 val audioId = getAudioAlbumId(filePath)
                 if (audioId != null) {
                     thumbnailPath = generateAlbumArtPath(audioId).orEmpty()
                 }
-                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                cachedStorage.setString(filePath, thumbnailPath)
             }
             "FILE_TYPE.IMAGE" -> {
                 if (filePath.contains("/files/thumbnails/")) {
@@ -170,7 +159,7 @@ class StorageUtils(context: Context) {
                 } else {
                     generateImageThumbnail(file.nameWithoutExtension, filePath).orEmpty()
                 }
-                cachedStorage.storeThumbnailPath(filePath, thumbnailPath)
+                cachedStorage.setString(filePath, thumbnailPath)
             }
         }
         return thumbnailPath
