@@ -434,13 +434,17 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
         if (len > 0) {
             try {
                 var dir = AndroidFile(nanoHTTPD.myRootDir, fileUri)
-                if(fileUri.startsWith("/SDCard") && nanoHTTPD.sdCardRootDir != null) {
-                   dir = AndroidFile(nanoHTTPD.sdCardRootDir!!, fileUri.removePrefix("/SDCard"))
+                if (fileUri.startsWith("/SDCard") && nanoHTTPD.sdCardRootDir != null) {
+                    dir = AndroidFile(nanoHTTPD.sdCardRootDir!!, fileUri.removePrefix("/SDCard"))
                 }
-                val temp = File(dir, filename)
+                var temp = File(dir, filename)
 
                 Log.d(logTag, "can dir write: " + dir.path + " " + dir.canWrite())
                 if (!temp.exists()) {
+                    temp.createNewFile()
+                } else {
+                    val filesWithSameName = dir.listFiles { _, name -> name.startsWith(temp.nameWithoutExtension) }
+                    temp = File(dir, "${temp.nameWithoutExtension}(${filesWithSameName.size}).${temp.extension}")
                     temp.createNewFile()
                 }
 
@@ -479,8 +483,9 @@ class HTTPSession(private val nanoHTTPD: NanoHTTPD, private val mySocket: Socket
             decoded = URLDecoder.decode(str, "UTF8")
         } catch (e: UnsupportedEncodingException) {
             sendError(HTTP_BAD_REQUEST, "BAD REQUEST: Bad percent-encoding.")
+        } catch (e: IllegalArgumentException) {
+            sendError(HTTP_BAD_REQUEST, "BAD REQUEST: URL contains non-english characters, please rename the file and try again")
         }
-
         return decoded
     }
 

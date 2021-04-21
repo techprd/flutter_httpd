@@ -286,6 +286,9 @@ open class NanoHTTPD {
                     e.printStackTrace()
                 }
             }
+            uri.contains("has-sd-card") -> {
+                data = "${sdCardRootDir != null}"
+            }
         }
         val res = Response(HTTP_OK, MIME_JSON, data)
         res.addHeader("Access-Control-Allow-Origin", "*")
