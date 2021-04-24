@@ -31,6 +31,11 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
 
     @Throws(JSONException::class)
     fun getPhotoAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return photoAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC")
+                    .queryContentProvider()
+        }
         return photoAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC")
@@ -39,6 +44,11 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
 
     @Throws(JSONException::class)
     fun getVideoAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return videoAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC")
+                    .queryContentProvider()
+        }
         return videoAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC")
@@ -47,6 +57,11 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
 
     @Throws(JSONException::class)
     fun getMusicAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return musicAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Audio.AlbumColumns.ALBUM_ID + " DESC")
+                    .queryContentProvider()
+        }
         return musicAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Audio.AlbumColumns.ALBUM_ID + " DESC")
@@ -56,7 +71,7 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
     @Throws(JSONException::class)
     fun getPhotos(album: String, limit: Int, offset: Int): JSONObject {
         return photoProvider.setContext(context)
-                .setWhereClause(MediaStore.Images.Media.BUCKET_DISPLAY_NAME + "=?")
+                .setWhereClause(MediaStore.Images.Media.BUCKET_ID + "=?")
                 .setSelectionArgs(arrayOf(album))
                 .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC ")
                 .setLimit(limit)
@@ -67,7 +82,8 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
     @Throws(JSONException::class)
     fun getVideos(album: String, limit: Int, offset: Int): JSONObject {
         return videoProvider.setContext(context)
-                .setWhereClause(MediaStore.Video.Media.BUCKET_DISPLAY_NAME + "=?")
+                .setStorageUtils(storageUtils)
+                .setWhereClause(MediaStore.Video.Media.BUCKET_ID + "=?")
                 .setSelectionArgs(arrayOf(album))
                 .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC ")
                 .setLimit(limit)
@@ -103,7 +119,11 @@ class FileLibraryService @Inject constructor(private val storageUtils: StorageUt
     fun getRecentFiles(limit: Int, offset: Int): JSONObject {
         return recentFilesProvider.setContext(context)
                 .setSortOrder(MediaStore.Files.FileColumns.DATE_MODIFIED + " DESC ")
-                .setWhereClause(MediaStore.Files.FileColumns.MIME_TYPE + "!= 'application/octet-stream'")
+                .setWhereClause(
+                        MediaStore.Files.FileColumns.MIME_TYPE + "!= 'application/octet-stream'" +
+                                " AND " +
+                                MediaStore.Files.FileColumns.SIZE + " > 0"
+                )
                 .setOffset(offset)
                 .setLimit(limit)
                 .queryContentProvider()

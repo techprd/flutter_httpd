@@ -1,6 +1,7 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.util.Log
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_BAD_REQUEST
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_NOT_FOUND
@@ -392,7 +393,7 @@ open class NanoHTTPD {
                         val files = f.list()
                         val msg = StringBuilder("<html><body><h1>Directory $uri</h1><br/>")
 
-                        if (uri.length > 1) {
+                        if (uri.length > 1 && uri != "/SDCard/") {
                             val u = uri.substring(0, uri.length - 1)
                             val slash = u.lastIndexOf('/')
                             if (slash >= 0 && slash < u.length)
