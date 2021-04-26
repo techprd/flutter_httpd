@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_httpd/AndroidFile.dart';
 import 'package:flutter_httpd/statics.dart';
 
 import 'StorageDetail.dart';
@@ -58,4 +60,19 @@ class FlutterHttpd {
 
   static Future<String> getPlatformVersion() async =>
       await _channel.invokeMethod(Statics.ACTION_GET_PLATFORM_VERSION, {});
+
+  static Future<List<AndroidFile>> getRecentFiles(int limit, int offset) async {
+    final options = {
+      "limit": limit,
+      "offset": offset,
+    };
+    Map files =
+        await _channel.invokeMethod(Statics.ACTION_GET_RECENT_FILES, options);
+    List fList = files.values.where((element) => element is List).first;
+    List<AndroidFile> output = [];
+    fList.forEach((file) {
+      output.add(AndroidFile.fromJson(file));
+    });
+    return output;
+  }
 }

@@ -7,4 +7,5 @@ class Statics {
   static const ACTION_GET_STORAGE_DETAILS = "getStorageDetails";
   static const ACTION_GET_MEDIA_STORAGE_DETAILS = "getMediaStorageDetails";
   static const ACTION_GET_THUMBNAIL_PATH = "getThumbnailPath";
+  static const ACTION_GET_RECENT_FILES = "getRecentFiles";
 }

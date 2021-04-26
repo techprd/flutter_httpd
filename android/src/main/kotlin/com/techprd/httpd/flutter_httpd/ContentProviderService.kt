@@ -19,8 +19,7 @@ import java.util.*
 import kotlin.collections.ArrayList
 
 
-class ContentProviderService(
-        private val externalContentUri: Uri, private val queryType: QueryType) {
+class ContentProviderService(private val externalContentUri: Uri, private val queryType: QueryType) {
 
     private var dateFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
     private var context: Context? = null
@@ -29,6 +28,7 @@ class ContentProviderService(
     private var sortOrder = ""
     private var limit = 0
     private var offset = 0
+    private lateinit var storageUtils: StorageUtils
 
     init {
         dateFormatter.timeZone = TimeZone.getTimeZone("UTC")
@@ -61,6 +61,11 @@ class ContentProviderService(
 
     fun setOffset(offset: Int): ContentProviderService {
         this.offset = offset
+        return this
+    }
+
+    fun setStorageUtils(storageUtils: StorageUtils): ContentProviderService {
+        this.storageUtils = storageUtils
         return this
     }
 
@@ -117,8 +122,8 @@ class ContentProviderService(
         when {
             item.has(MediaStore.Images.ImageColumns.MINI_THUMB_MAGIC) -> when {
                 externalContentUri === MediaStore.Video.Media.EXTERNAL_CONTENT_URI -> {
-                    val videoId = cursor.getInt(cursor.getColumnIndex(MediaStore.Video.Media._ID))
-                    getVideoThumbnail(context!!, item, videoId)
+                    val video = cursor.getString(cursor.getColumnIndex(MediaStore.Video.Media.DATA))
+                    getVideoThumbnail(item, video)
                 }
                 else -> {
                     val imageId = cursor.getInt(cursor.getColumnIndex(MediaStore.Images.Media._ID))
@@ -126,6 +131,10 @@ class ContentProviderService(
                 }
             }
             else -> when {
+                queryType === QueryType.VIDEO -> {
+                    val video = cursor.getString(cursor.getColumnIndex(MediaStore.Video.Media.DATA))
+                    getVideoThumbnail(item, video)
+                }
                 queryType === QueryType.PHOTO -> {
                     val imageId = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME))
                     generateThumbnail(imageId, item)
@@ -207,18 +216,11 @@ class ContentProviderService(
     }
 
     @Throws(JSONException::class)
-    private fun getVideoThumbnail(context: Context, item: JSONObject, videoID: Int) {
-        val projection = arrayOf(MediaStore.Video.Media.DATA)
-        val cursor = context.contentResolver.query(
-                MediaStore.Video.Thumbnails.EXTERNAL_CONTENT_URI,
-                projection,
-                MediaStore.Video.Thumbnails.VIDEO_ID + "=?",
-                arrayOf(videoID.toString()), null)
-        if (cursor!!.count > 0) {
-            cursor.moveToFirst()
-            val thumbnail = cursor.getString(0)
-            item.put("thumbnail", thumbnail)
-            cursor.close()
-        }
+    private fun getVideoThumbnail(item: JSONObject, url: String) {
+        val query = hashMapOf<String, Any>()
+        query["path"] = url
+        query["type"] = "FILE_TYPE.VIDEO"
+        val videoThumbnail = this.storageUtils.getThumbnailPath(query)
+        item.put("thumbnail", videoThumbnail).toString()
     }
 }

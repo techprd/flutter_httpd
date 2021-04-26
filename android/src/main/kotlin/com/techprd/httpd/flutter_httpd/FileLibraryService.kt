@@ -1,11 +1,16 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.os.Build
 import android.provider.MediaStore
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class FileLibraryService(private val context: Context) {
+@Singleton
+class FileLibraryService @Inject constructor(private val storageUtils: StorageUtils, private val context: Context) {
     private val photoAlbumProvider: ContentProviderService =
             ContentProviderService(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, QueryType.PHOTO_ALBUM)
     private val photoProvider =
@@ -20,25 +25,17 @@ class FileLibraryService(private val context: Context) {
             ContentProviderService(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, QueryType.MUSIC)
     private val musicAlbumCoverProvider =
             ContentProviderService(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI, QueryType.MUSIC_ALBUM_COVER)
-
-    companion object {
-        private var instance: FileLibraryService? = null
-
-        fun getInstance(context: Context): FileLibraryService? {
-            if (instance == null) {
-                synchronized(FileLibraryService::class.java) {
-                    if (instance == null) {
-                        instance = FileLibraryService(context)
-                    }
-                }
-            }
-            return instance
-        }
-    }
+    private val recentFilesProvider =
+            ContentProviderService(MediaStore.Files.getContentUri("external"), QueryType.RECENT_FILE)
 
 
     @Throws(JSONException::class)
     fun getPhotoAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return photoAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC")
+                    .queryContentProvider()
+        }
         return photoAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC")
@@ -47,6 +44,11 @@ class FileLibraryService(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getVideoAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return videoAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC")
+                    .queryContentProvider()
+        }
         return videoAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC")
@@ -55,6 +57,11 @@ class FileLibraryService(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getMusicAlbums(): JSONObject {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+            return musicAlbumProvider.setContext(context)
+                    .setSortOrder(MediaStore.Audio.AlbumColumns.ALBUM_ID + " DESC")
+                    .queryContentProvider()
+        }
         return musicAlbumProvider.setContext(context)
                 .setWhereClause("1) GROUP BY 1,(2")
                 .setSortOrder(MediaStore.Audio.AlbumColumns.ALBUM_ID + " DESC")
@@ -64,7 +71,7 @@ class FileLibraryService(private val context: Context) {
     @Throws(JSONException::class)
     fun getPhotos(album: String, limit: Int, offset: Int): JSONObject {
         return photoProvider.setContext(context)
-                .setWhereClause(MediaStore.Images.Media.BUCKET_DISPLAY_NAME + "=?")
+                .setWhereClause(MediaStore.Images.Media.BUCKET_ID + "=?")
                 .setSelectionArgs(arrayOf(album))
                 .setSortOrder(MediaStore.Images.Media.DATE_TAKEN + " DESC ")
                 .setLimit(limit)
@@ -75,7 +82,8 @@ class FileLibraryService(private val context: Context) {
     @Throws(JSONException::class)
     fun getVideos(album: String, limit: Int, offset: Int): JSONObject {
         return videoProvider.setContext(context)
-                .setWhereClause(MediaStore.Video.Media.BUCKET_DISPLAY_NAME + "=?")
+                .setStorageUtils(storageUtils)
+                .setWhereClause(MediaStore.Video.Media.BUCKET_ID + "=?")
                 .setSelectionArgs(arrayOf(album))
                 .setSortOrder(MediaStore.Video.Media.DATE_TAKEN + " DESC ")
                 .setLimit(limit)
@@ -93,9 +101,31 @@ class FileLibraryService(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getMusicAlbumCover(albumId: String): JSONObject {
+        if (Build.VERSION.SDK_INT > 29) {
+            val albumCover = storageUtils.generateAlbumArtPath(albumId.toLong())
+            val obj = JSONObject()
+            val arr = JSONArray()
+            arr.put(JSONObject().put("album_art", albumCover))
+            obj.put("data", arr)
+            return obj
+        }
         return musicAlbumCoverProvider.setContext(context)
                 .setWhereClause(MediaStore.Audio.Albums._ID + " = ?")
                 .setSelectionArgs(arrayOf(albumId))
+                .queryContentProvider()
+    }
+
+    @Throws(JSONException::class)
+    fun getRecentFiles(limit: Int, offset: Int): JSONObject {
+        return recentFilesProvider.setContext(context)
+                .setSortOrder(MediaStore.Files.FileColumns.DATE_MODIFIED + " DESC ")
+                .setWhereClause(
+                        MediaStore.Files.FileColumns.MIME_TYPE + "!= 'application/octet-stream'" +
+                                " AND " +
+                                MediaStore.Files.FileColumns.SIZE + " > 0"
+                )
+                .setOffset(offset)
+                .setLimit(limit)
                 .queryContentProvider()
     }
 }
