@@ -1,6 +1,7 @@
 package com.techprd.httpd.flutter_httpd
 
 import android.content.Context
+import android.util.Log
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_BAD_REQUEST
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_INTERNAL_ERROR
 import com.techprd.httpd.flutter_httpd.Statics.HTTP_NOT_FOUND
@@ -41,6 +42,7 @@ open class NanoHTTPD {
     private val myServerSocket: ServerSocket
     private val myThread: Thread
     val myRootDir: AndroidFile
+    var sdCardRootDir: AndroidFile? = null
 
     val theBufferSize = 16 * 1024
     var forceDownload = false
@@ -92,7 +94,7 @@ open class NanoHTTPD {
     // ==================================================
     // Socket & server code
     // ==================================================
-
+    // TODO: simplify these constructors
     /**
      * Starts a HTTP server to given port.
      *
@@ -100,11 +102,12 @@ open class NanoHTTPD {
      * Throws an IOException if the socket is already in use
      */
     @Throws(IOException::class)
-    constructor(localAddress: InetSocketAddress, wwwRoot: AndroidFile, context: Context) {
-        fileLibraryService = FileLibraryService.getInstance(context)
+    constructor(fileLibraryService: FileLibraryService, localAddress: InetSocketAddress, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
+        this.fileLibraryService = fileLibraryService
         this.context = context
         myTcpPort = localAddress.port
         myRootDir = wwwRoot
+        this.sdCardRootDir = sdCardRootDir
         myServerSocket = ServerSocket()
         myServerSocket.bind(localAddress)
         myThread = Thread(Runnable {
@@ -126,11 +129,12 @@ open class NanoHTTPD {
      * Throws an IOException if the socket is already in use
      */
     @Throws(IOException::class)
-    constructor(port: Int, wwwRoot: AndroidFile, context: Context) {
-        fileLibraryService = FileLibraryService.getInstance(context)
+    constructor(fileLibraryService: FileLibraryService, port: Int, wwwRoot: AndroidFile, sdCardRootDir: AndroidFile?, context: Context) {
+        this.fileLibraryService = fileLibraryService
         this.context = context
         myTcpPort = port
-        this.myRootDir = wwwRoot
+        myRootDir = wwwRoot
+        this.sdCardRootDir = sdCardRootDir
         myServerSocket = ServerSocket(myTcpPort)
         myThread = Thread(Runnable {
             try {
@@ -179,8 +183,12 @@ open class NanoHTTPD {
             }
 
         } else return when {
-            uri.contains("api") -> serveJson(uri, params)
-            uri.contains("dashboard") -> serveFile("/", header, myRootDir)
+            uri.startsWith("/api") -> serveJson(uri, params)
+            uri.startsWith("/app") -> serveFile("/", header, myRootDir)
+            uri.startsWith("/SDCard") -> {
+                sdCardRootDir?.let { serveFile(uri, header, it) }
+                        ?: serveFile("/", header, myRootDir)
+            }
             else -> serveFile(uri, header, myRootDir)
         }
 
@@ -265,6 +273,23 @@ open class NanoHTTPD {
                     e.printStackTrace()
                 }
             }
+            uri.contains("get-recent-files") -> {
+                val limit = params.getProperty("LIMIT")
+                val offset = params.getProperty("OFFSET")
+                if (limit == null || limit == "" || offset == null || offset == "") {
+                    return Response(HTTP_BAD_REQUEST, MIME_JSON,
+                            "BAD REQUEST: no limit HEADER presented.")
+                }
+                try {
+                    val recentFiles = fileLibraryService!!.getRecentFiles(Integer.parseInt(limit), Integer.parseInt(offset))
+                    data = recentFiles.toString()
+                } catch (e: JSONException) {
+                    e.printStackTrace()
+                }
+            }
+            uri.contains("has-sd-card") -> {
+                data = "${sdCardRootDir != null}"
+            }
         }
         val res = Response(HTTP_OK, MIME_JSON, data)
         res.addHeader("Access-Control-Allow-Origin", "*")
@@ -338,6 +363,9 @@ open class NanoHTTPD {
                         "FORBIDDEN: Won't serve ../ for security reasons.")
         }
         var f = AndroidFile(homeDir, uri)
+        if (path.startsWith("/SDCard")) {
+            f = AndroidFile(homeDir, uri.removePrefix("/SDCard"))
+        }
         if (res == null && !f.exists())
             res = Response(HTTP_NOT_FOUND, MIME_PLAINTEXT,
                     "Error 404, file not found.")
@@ -365,7 +393,7 @@ open class NanoHTTPD {
                         val files = f.list()
                         val msg = StringBuilder("<html><body><h1>Directory $uri</h1><br/>")
 
-                        if (uri.length > 1) {
+                        if (uri.length > 1 && uri != "/SDCard/") {
                             val u = uri.substring(0, uri.length - 1)
                             val slash = u.lastIndexOf('/')
                             if (slash >= 0 && slash < u.length)

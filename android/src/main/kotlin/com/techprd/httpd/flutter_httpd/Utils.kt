@@ -18,6 +18,7 @@ class Utils {
                 QueryType.MUSIC_ALBUM_COVER -> getMusicAlbumCoverColumns()
                 QueryType.MUSIC_ALBUM -> getMusicAlbumColumns()
                 QueryType.MUSIC -> getMusicColumns()
+                QueryType.RECENT_FILE -> getRecentFileColumns()
             }
         }
 
@@ -132,7 +133,24 @@ class Utils {
             return object : JSONObject() {
                 init {
                     put("album_art", MediaStore.Audio.Albums.ALBUM_ART)
+                    put("album", MediaStore.Audio.Albums.ALBUM)
                     put("album_id", MediaStore.Audio.Albums._ID)
+                }
+            }
+        }
+
+        @Throws(JSONException::class)
+        private fun getRecentFileColumns(): JSONObject {
+            return object : JSONObject() {
+                init {
+                    put("int.id", MediaStore.Files.FileColumns._ID)
+                    put("title", MediaStore.Files.FileColumns.TITLE)
+                    put("mime", MediaStore.Files.FileColumns.MIME_TYPE)
+                    put("display_name", MediaStore.Files.FileColumns.DISPLAY_NAME)
+                    put("nativeURL", MediaStore.Files.FileColumns.DATA)
+                    put("int.size", MediaStore.Files.FileColumns.SIZE)
+                    put("int.date_added", MediaStore.Files.FileColumns.DATE_ADDED)
+                    put("int.date_modified", MediaStore.Files.FileColumns.DATE_MODIFIED)
                 }
             }
         }

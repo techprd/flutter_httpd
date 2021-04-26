@@ -25,6 +25,7 @@ object Statics {
     const val ACTION_GET_STORAGE_DETAILS = "getStorageDetails"
     const val ACTION_GET_MEDIA_STORAGE_DETAILS = "getMediaStorageDetails"
     const val ACTION_GET_THUMBNAIL_PATH = "getThumbnailPath"
+    const val ACTION_GET_RECENT_FILES = "getRecentFiles"
 
     const val OPT_WWW_ROOT = "www_root"
     const val OPT_PORT = "port"

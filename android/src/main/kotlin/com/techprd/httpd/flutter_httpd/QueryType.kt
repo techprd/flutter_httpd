@@ -7,5 +7,6 @@ enum class QueryType {
     VIDEO,
     MUSIC_ALBUM_COVER,
     MUSIC_ALBUM,
-    MUSIC
+    MUSIC,
+    RECENT_FILE
 }
